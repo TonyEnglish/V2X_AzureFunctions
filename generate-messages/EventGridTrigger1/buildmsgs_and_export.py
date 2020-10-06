@@ -59,7 +59,7 @@ from . import wz_map_constructor
 
 from . import wz_xml_builder
 
-from . import rsm_2_wzdx_translator_updated
+from . import rsm_2_wzdx_translator
 
 from . import wz_msg_segmentation
 
@@ -145,8 +145,9 @@ def configRead(file):
             getConfigVars()
 		
         except Exception as e:
-            error = True
-            logMsg('Configuration file read failed: ' + file + '\n' + str(e))
+            logMsg('ERROR: Configuration file read failed: ' + file + '\n' + str(e))
+            uploadLogFile()
+            raise e
     else:
         logMsg('Configuration file NOT FOUND')
 
@@ -218,7 +219,7 @@ def getConfigVars():
     # Location
     global  wzStartLat                                     #wz start date
     global  wzStartLon                                     #wz start time
-    global  beginingAccuracy
+    global  beginningAccuracy
     global  wzEndLat                                       #wz end date
     global  wzEndLon                                       #wz end time
     global  endingAccuracy
@@ -288,7 +289,7 @@ def getConfigVars():
 
     wzStartLat              = wzConfig['Location']['BeginningLocation']['Lat']
     wzStartLon              = wzConfig['Location']['BeginningLocation']['Lon']
-    beginingAccuracy        = wzConfig['Location']['BeginningAccuracy']
+    beginningAccuracy        = wzConfig['Location']['BeginningAccuracy']
     wzEndLat                = wzConfig['Location']['EndingLocation']['Lat']
     wzEndLon                = wzConfig['Location']['EndingLocation']['Lon']
     endingAccuracy          = wzConfig['Location']['EndingAccuracy']
@@ -406,29 +407,19 @@ def build_messages():
 ###
 ### Create and open output xml file...
 ###
-       
-        ##xml_outFile = './WZ_XML_File/RSZW_MAP_xmlFile-' + str(currSeg)+'_of_'+str(totSeg)+'.exer'
-        xml_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + str(currSeg)+'_of_'+str(totSeg)+'.xml'
-        logMsg('RSM XML output file path: ' + xml_outFile)
-        uper_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + str(currSeg)+'_of_'+str(totSeg)+'.uper'
-        logMsg('RSM UPER output file path: ' + uper_outFile)
-        xmlFile = open(xml_outFile, 'w')
-        files_list.append(xml_outFile)
-        files_list.append(uper_outFile)
-    
-###
-#   Write initial xml lines in the output xml file...
-#   Introductory lines...
-###
-      
-        # xmlFile.write ('<?xml version=\'1.0\' encoding=\'UTF-8\'?>\n' + \
-        #                '<!-- \n' + \
-        #                '\t CAMP xml file for RSZW/LC Mapping Project\n' + \
-        #                '\t Message segment file '+ str(currSeg)+' of '+str(totSeg)+'...\n\n' + \
-        #                '\t Version 1.5 - June, 2018\n' + \
-        #                '\t for RSMv5.1 ASN\n' + \
-        #                '\t File Name: '+xml_outFile+'\n' + \
-        #                '\t Created: '+cDT+'\n\n-->\n')
+        if noRSM:
+            logMsg('Accuracy too low, not adding RSM files to files_list ')
+        else:
+            xml_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + str(currSeg)+'_of_'+str(totSeg)+'.xml'
+            logMsg('RSM XML output file path: ' + xml_outFile)
+
+            uper_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + str(currSeg)+'_of_'+str(totSeg)+'.uper'
+            logMsg('RSM UPER output file path: ' + uper_outFile)
+
+            xmlFile = open(xml_outFile, 'w')
+
+            files_list.append(xml_outFile)
+            files_list.append(uper_outFile)
 
 ###
 #   Build common container...
@@ -457,18 +448,8 @@ def build_messages():
 ###
 #   Build xml for common container...
 ###
-        # build_xml_CC (xmlFile,idList,wzStart,wzEnd,timeOffset,c_sc_codes,newRefPt,appHeading,hTolerance, \
-        #               speedLimit,roadWidth,eventLength,laneStat,appMapPt,msgSegList,currSeg,wzDesc)
-        commonContainer = wz_xml_builder.build_xml_CC (xmlFile,idList,wzStart,wzEnd,timeOffset,wzDaysOfWeek,c_sc_codes,newRefPt,appHeading,hTolerance, \
+        commonContainer = wz_xml_builder.build_xml_CC (idList,wzStart,wzEnd,timeOffset,wzDaysOfWeek,c_sc_codes,newRefPt,appHeading,hTolerance, \
                       speedLimit,laneWidth,roadWidth,eventLength,laneStat,appMapPt,msgSegList,currSeg,wzDesc)
-
-        #if currSeg == 1:
-            #logMsg('\n ---Constructed Approach Lane Node Points/Lane: '+str(len(appMapPt))+'\t(Must between 2 and 63)')
-            #logMsg('\n ---Message Segmentation for Work Zone Lanes')        
-        #pass
-
-        #logMsg('\t ---Segment#: '+str(currSeg)+'Start Node#: '+str(startNode)+'\n\t\t New Ref. Pt: '+str(newRefPt))
-        # logMsg('Segment#: '+str(currSeg)+'Start Node#: '+str(startNode)+'\n\t\t New Ref. Pt: '+str(newRefPt))
 
 ###
 #       WZ length, LC characteristic, workers present, etc. 
@@ -480,8 +461,7 @@ def build_messages():
 ###
 #   Build WZ container
 ###
-        # build_xml_WZC (xmlFile,speedLimit,laneWidth,laneStat,wpStat,wzMapPt,RN,msgSegList,currSeg)
-        rszContainer = wz_xml_builder.build_xml_WZC (xmlFile,speedLimit,laneWidth,laneStat,wpStat,wzMapPt,RN,msgSegList,currSeg)
+        rszContainer = wz_xml_builder.build_xml_WZC (speedLimit,laneWidth,laneStat,wpStat,wzMapPt,RN,msgSegList,currSeg)
 
         rsm = {}
         rsm['MessageFrame'] = {}
@@ -494,23 +474,24 @@ def build_messages():
 
         rsmSegments.append(rsm)
 
-        rsm_xml = xmltodict.unparse(rsm, short_empty_elements=True, pretty=True, indent='  ')
-        xmlFile.write(rsm_xml)
+        if not noRSM:
+            rsm_xml = xmltodict.unparse(rsm, short_empty_elements=True, pretty=True, indent='  ')
+            xmlFile.write(rsm_xml)
 
-        xmlFile.close()
-        # logging.warning('ABOUT TO CREATE UPER FILE')
+            xmlFile.close()
+            # logging.warning('ABOUT TO CREATE UPER FILE')
 
-        linux = subprocess.check_output(['uname', '-a'], stderr=subprocess.STDOUT).decode('utf-8')
-        logMsg("Linux Installation Information: " + str(linux))
-        subprocess.call(['./EventGridTrigger1/jvm/bin/java', '-jar', './EventGridTrigger1/CVMsgBuilder_xmltouper_v8.jar', str(xml_outFile), str(uper_outFile)]) #jre1.8.0_261-i586/bin/ jvm/java-11-openjdk-amd64/bin/  ,stdout=devnull
-        logMsg("Uper file size: " + str(os.stat(uper_outFile).st_size))
-        if not os.path.exists(uper_outFile) or os.stat(uper_outFile).st_size == 0:
-            logMsg('ERROR: UPER FILE DOES NOT EXIST OR HAS SIZE 0')
-            logMsg('ERROR: RSM UPER conversion FAILED, ensure that you have java installed (>=1.8 or jdk>=8) and added to your system path')
-        #     print('RSM Binary conversion FAILED', 'RSM Binary (UPER) conversion failed\nEnsure that you have java installed (version>=1.8 or jdk>=8) and added to your system path\nThen run WZ_BuildMsgs_and_Export.pyw')
-        #     # logMsg('Exiting Application')
-        #     logFile.close()
-        #     sys.exit(0)
+            linux = subprocess.check_output(['uname', '-a'], stderr=subprocess.STDOUT).decode('utf-8')
+            logMsg("Linux Installation Information: " + str(linux))
+            subprocess.call(['./EventGridTrigger1/jvm/bin/java', '-jar', './EventGridTrigger1/CVMsgBuilder_xmltouper_v8.jar', str(xml_outFile), str(uper_outFile)]) #jre1.8.0_261-i586/bin/ jvm/java-11-openjdk-amd64/bin/  ,stdout=devnull
+            logMsg("Uper file size: " + str(os.stat(uper_outFile).st_size))
+            if not os.path.exists(uper_outFile) or os.stat(uper_outFile).st_size == 0:
+                logMsg('ERROR: UPER FILE DOES NOT EXIST OR HAS SIZE 0')
+                logMsg('ERROR: RSM UPER conversion FAILED, ensure that you have java installed (>=1.8 or jdk>=8) and added to your system path')
+            #     print('RSM Binary conversion FAILED', 'RSM Binary (UPER) conversion failed\nEnsure that you have java installed (version>=1.8 or jdk>=8) and added to your system path\nThen run WZ_BuildMsgs_and_Export.pyw')
+            #     # logMsg('Exiting Application')
+            #     logFile.close()
+            #     sys.exit(0)
 
         currSeg = currSeg+1
     pass
@@ -528,7 +509,7 @@ def build_messages():
     info['creation_date'] = creationDate
     info['update_date'] = updateDate
     info['event_status'] = eventStatus
-    info['beginning_accuracy'] = beginingAccuracy
+    info['beginning_accuracy'] = beginningAccuracy
     info['ending_accuracy'] = endingAccuracy
     info['start_date_accuracy'] = startDateAccuracy
     info['end_date_accuracy'] = endDateAccuracy
@@ -546,7 +527,7 @@ def build_messages():
     info['types_of_work'] = typeOfWork
     info['lanes_obj'] = lanes_obj
     # logMsg('Converting RSM XMl to WZDx message')
-    wzdx = rsm_2_wzdx_translator_updated.wzdx_creator(rsmSegments, dataLane, info)
+    wzdx = rsm_2_wzdx_translator.wzdx_creator(rsmSegments, dataLane, info)
     wzdxFile.write(json.dumps(wzdx, indent=2))
     wzdxFile.close()
 
@@ -569,7 +550,7 @@ def startMainProcess(vehPathDataFile):
     global  wzMapLen                                                #Mapped approach and wz lane length in meters
     global  appHeading                                              #approach heading
     global  sampleFreq
-
+    global  noRSM                                                   #If accuracy is too low, do not generate RSM message
     global  msgSegList                                              #WZ message segmentation list
 ##  global  wzMapBuiltSuccess                                       #WZ map built successful or not flag
 ##  wzMapBuiltSuccess = False                                       #Default set to False                                  
@@ -602,12 +583,20 @@ def startMainProcess(vehPathDataFile):
 #   
 ###
 
-    atRefPoint  = [0,0,0]                                           #temporary list to hold return values from function below 
+    atRefPoint  = [0,0,0,0]                                             #temporary list to hold return values from function below 
     wz_vehpath_lanestat_builder.buildVehPathData_LaneStat(vehPathDataFile,totalLanes,pathPt,laneStat,wpStat,refPoint,atRefPoint,sampleFreq)
 
     refPtIdx    = atRefPoint[0]
     wzLen       = atRefPoint[1]
     appHeading  = atRefPoint[2]
+    maxHDOP     = atRefPoint[3]
+    maxAllowableHDOP = 2        # meters
+    if maxHDOP > maxAllowableHDOP:
+        logMsg('GPS Accuracy too low, max value of HDOP: ' + str(maxHDOP) + ' is greater than the limit of ' + str(maxAllowableHDOP) + '. Cannot upload RSM messages')
+        noRSM = True
+    else:
+        noRSM = False
+        logMsg('GPS Accuracy high enough, max value of HDOP: ' + str(maxHDOP) + ' is greater than the limit of ' + str(maxAllowableHDOP) + '. RSM messages will be uploaded')
 
     # logMsg(' --- Start of Work Zone at Data Point: '+str(refPtIdx))
     # logMsg('Reference Point @ '+refPoint[0]+', '+refPoint[1]+', '+refPoint[2])
@@ -773,15 +762,17 @@ def uploadArchive(zip_name, container_name):
     with open(zip_name, 'rb') as data:
         blob_client.upload_blob(data, overwrite=True)
 
-    logFile.close()
-    blob_client_log = blob_service_client.get_blob_client(container="logs", blob=logFileName.replace(".txt",ctrDT+".txt"))
-    with open(logFileName, 'rb') as data:
-        blob_client_log.upload_blob(data, overwrite=True)
+    uploadLogFile()
 
     # logMsg('Closing log file in Message Builder and Export')
     # logFile.close()
     print('Upload Successful', 'Data upload successful! Please navigate to\nhttp://www.neaeraconsulting.com/V2x_Verification\nto view and verify the mapped workzone.\nYou will find your data under\n' + name_id)
 
+def uploadLogFile():
+    logFile.close()
+    blob_client_log = blob_service_client.get_blob_client(container="logs", blob=logFileName.replace(".txt",ctrDT+".txt"))
+    with open(logFileName, 'rb') as data:
+        blob_client_log.upload_blob(data, overwrite=True)
 ##
 #   ---------------------------- END of Functions... -----------------------------------------
 ##

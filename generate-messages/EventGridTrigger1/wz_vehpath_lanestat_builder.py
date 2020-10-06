@@ -43,6 +43,8 @@ def buildVehPathData_LaneStat (vehPathDataFile,totalLanes,pathPt,laneStat,wpStat
     refPtIdx    = 0                                         #ref point index
     wzLen       = 0                                         #wz length in meters
     appHeading  = 0                                         #applicable heading angle
+
+    maxHDOP     = 0
    
 ###
 #   Following variables are modified in this function and the modified value is available only if they are declared
@@ -70,20 +72,9 @@ def buildVehPathData_LaneStat (vehPathDataFile,totalLanes,pathPt,laneStat,wpStat
         next (csvReader)                                    ###skip the first header line
 
         for row in csvReader:
-        
-###
-#       *** OLD CSV FORMAT ***          NO LONGER USED...  March-2018
-#
-#       Input Data:   ---- This is for DENSO Application CSV file for RSZW/LC Application
-#       row[6]  = veh speed in meter
-#       row[7]  = left turn signal - indication of start of WZ (Ref. Pt.)
-#       row[11] = Lat
-#       row[12] = Lon
-#       row[13] = Heading
-###
-#       ---------------------------------------------
-###
-#       *** NEW CSV FORMAT ***
+            if float(row[2]) > maxHDOP:
+                maxHDOP = float(row[2])
+#       *** CSV FORMAT ***
 #
 #       Input Data:   ---- This is NEW CSV file format for RSZW/LC Mapping Application ----
 #       row[0]  =   GPSTime/GPSDate
@@ -107,143 +98,73 @@ def buildVehPathData_LaneStat (vehPathDataFile,totalLanes,pathPt,laneStat,wpStat
 #
 #       pathPt  =   An array to hold following for creating map points for approach and wz lanes with indications for WP and LC/LO
 #                   index, speed, lat, lon, alt, heading, wp status, lane# and status
-#
-###
-#       Process input line based on input format
-#               = Flase, Old format                 NO LONGER IN USE...
-#               = True, New format
-###
-#       --------------- OLD FORMAT NOT USED... -----------------------------------------
-
-            if newFormat == False:                      #process input data from old format
-                pathPt.insert(rowKt,list((round(float(row[6]),4),round(float(row[11]),8),   \
-                                          round(float(row[12]),8),round(float(row[13]),3))))
-
-                ##print (rowKt,pathPt[rowKt])            
-###
-#               Left Turn signal indicates start of WZ (Ref. Point) and also start of lane closure...
-###
-                if ((row[7] == "1") and (refPtIdx == 0)):
-                    refPoint[0] = row[11]                       #lat
-                    refPoint[1] = row[12]                       #lon
-                    #print ("\n --- Reference Point = ",rowKt,refPoint)
-                    refPtIdx = rowKt                            #got the ref point & Index
-                pass                                            #end of ref. pt if stmt
-
-                rowKt += 1                                      #process next record
-            pass                                                #end of inputFormat == False (Old Format)
-
-###
-#       < < < < < < FOLLOWING NEW DATA FORMAT in USE > > > > > > 
-#
-#       process input row for new input data format...
-###
-
-            if newFormat == True:                               #process input data from new format
                       
 ###
 #               Ref point marker. All lat/lon are represented in micro degrees. The collected lat/lon are in degrees.
 #               The values are multiplied by 10000000 in the function where xml is being created...
 #
 ###
+            marker = row[8]
         
-                if gotRefPt == False and (row[8] == "RP" or row[8] == "LC+RP" or row[8] == "WP+RP"):    #ref pt marker support for old and new marker                 
-                    refPoint[0] = row[3]                        #lat
-                    refPoint[1] = row[4]                        #lon
-                    refPoint[2] = row[5]                        #alt
-                    appHeading  = row[7]                        #applicableHeading for XML file. Currently taken from the mapping vehilce heading at ref. point
-                    refPtIdx    = rowKt                         #current input line (starts with 0)
-                    gotRefPt    = True
-                    #print ("\n --- Reference Point @ data point",refPtIdx,"(lat,Lon,Alt):",row[3], ",", row[4], ",", row[5])
-                pass                                            #end of reference point
-            
+            if gotRefPt == False and (marker == "RP" or marker == "LC+RP" or marker == "WP+RP"):    #ref pt marker support for old and new marker                 
+                refPoint[0] = row[3]                        #lat
+                refPoint[1] = row[4]                        #lon
+                refPoint[2] = row[5]                        #alt
+                appHeading  = row[7]                        #applicableHeading for XML file. Currently taken from the mapping vehilce heading at ref. point
+                refPtIdx    = rowKt                         #current input line (starts with 0)
+                gotRefPt    = True
+                #print ("\n --- Reference Point @ data point",refPtIdx,"(lat,Lon,Alt):",row[3], ",", row[4], ",", row[5])
+                                                        #end of reference point
+        
 ###
 #               Lane closed marker
 ###
-                if row[8] == "LC" or row[8] == "LC+RP":         #lane closed marker
-                    lc = int(row[9])                            #lane number starts from 0
-                    laneStat.insert(laneStatIdx,list((rowKt,lc,1,int(wzLen))))   #LC location, lane number, status flag, and offset from ref. pt.
-                    laneStatIdx += 1                            #incr array index
-                    #print ("laneStat for LC:", laneStat)
-                    #print (" --- Lane #",lc,"Closed @ data point",rowKt,"(lat,Lon,Alt):",row[3],row[4],row[5])
-                pass                                            #end of lc marker processed
+            if marker == "LC" or marker == "LC+RP":         #lane closed marker
+                lc = int(row[9])                            #lane number starts from 0
+                laneStat.insert(laneStatIdx,list((rowKt,lc,1,int(wzLen))))   #LC location, lane number, status flag, and offset from ref. pt.
+                laneStatIdx += 1                            #incr array index
+                #print ("laneStat for LC:", laneStat)
+                #print (" --- Lane #",lc,"Closed @ data point",rowKt,"(lat,Lon,Alt):",row[3],row[4],row[5])
+                                                        #end of lc marker processed
 
 ###
 #               Lane opened marker
 ###
-                if row[8] == "LO":                              #lane opened marker
-                    lc = int(row[9])                            #lane number starts from 0
-                    laneStat.insert(laneStatIdx,list((rowKt,lc,0,int(wzLen))))   #LO location, lane number, status flag and offset from ref. pt.
-                    laneStatIdx += 1                            #incr array index
-                    #print ("laneStat for LO:", laneStat)
-                    #print (" --- Lane #",lc,"Opened @ data point",rowKt,"(lat,Lon,Alt):",row[3],row[4],row[5])
-                pass                                            #end of lc marker processed
+            if marker == "LO":                              #lane opened marker
+                lc = int(row[9])                            #lane number starts from 0
+                laneStat.insert(laneStatIdx,list((rowKt,lc,0,int(wzLen))))   #LO location, lane number, status flag and offset from ref. pt.
+                laneStatIdx += 1                            #incr array index
+                #print ("laneStat for LO:", laneStat)
+                #print (" --- Lane #",lc,"Opened @ data point",rowKt,"(lat,Lon,Alt):",row[3],row[4],row[5])
+                                                        #end of lc marker processed
 
 ###
 #               Workers present / not present Marker
 ###
-                if row[8] == "WP" or row[8] == "WP+RP":         #WP Flag
-                    #print ("WP FOUND", row[8], row[9])
-                    row[9] = row[9].upper()
-                    if row[9] == "TRUE":  wp = 1
-                    if row[9] == "FALSE": wp = 0
-                    wpStat.insert(wpStatIdx,list((rowKt,wp,int(wzLen)))) #WP Status flag (converted from boolean to 0/1), location and offset from Ref Point
-                    wpStatIdx += 1                              #incr index
-                    stat = "Start"
-                    if row[9] == "FALSE": stat = "End"
-                    #print ("wpStat: ", wpStatIdx, wpStat)
-                    #print (" --- *** ---",stat,"of workers present - ", row[9], "@ data point", rowKt,"(Lat,Lon,Alt):",row[3], row[4], row[5])
-                pass          
-
-###
-#               Stop processing input file when hit "App Ended" marker...
-###
-                if row[8] != "App Ended":
+            if marker == "WP" or marker == "WP+RP":         #WP Flag
+                #print ("WP FOUND", row[8], row[9])
+                # row[9] = row[9].upper()
+                if row[9] == "True":  wp = 1
+                if row[9] == "False": wp = 0
+                wpStat.insert(wpStatIdx,list((rowKt,wp,int(wzLen)))) #WP Status flag (converted from boolean to 0/1), location and offset from Ref Point
+                wpStatIdx += 1                              #incr index
+                stat = "Start"
+                if row[9] == "False": stat = "End"
+                #print ("wpStat: ", wpStatIdx, wpStat)
+                #print (" --- *** ---",stat,"of workers present - ", row[9], "@ data point", rowKt,"(Lat,Lon,Alt):",row[3], row[4], row[5])
 ###
 #               Insert(save) vehicle path data point to pathPt array ...
 ###
-                    pathPt.insert(rowKt,list((round(float(row[6]),4),round(float(row[3]),8),   \
-                                             round(float(row[4]),8),round(float(row[5]),2),round(float(row[7]),4))))
-                    ##print(rowKt,pathPt[rowKt])
-                    rowKt += 1                                      #incr array pointer 
+            pathPt.insert(rowKt,list((round(float(row[6]),4),round(float(row[3]),8),   \
+                                        round(float(row[4]),8),round(float(row[5]),2),round(float(row[7]),4))))
+            ##print(rowKt,pathPt[rowKt])
+            rowKt += 1                                      #incr array pointer 
 ###
 #                   add veh. speed. from Ref. Point till end of WZ to compute WZ Length...
 ###
-                    if (refPtIdx != 0):
-                        wzLen = wzLen + float(row[6])/sampleFreq    #add distance travel to wzLen
-                    pass
-                pass                                                #end of input data record
-            pass                                                    #end of inputFormat == 1
-        pass                                                        #end of input file = for loop
-
-        ###print ("WZ LEN = ",wzLen)
-
-
-###
-#       Do I have closed/opened lanes?
-#
-#       print/log following in the calling routine...
-###
-
-        #if laneStatIdx > 1:                                     #have lane closures...NOTE: Index 0 location is dummy value...
-        #    print ("\n ---Lane closed/opend offset from the Ref. Point in meters---")
-        #    for L in range(1, laneStatIdx):
-        #        stat = "Closed"
-        #        if laneStat[L][2] == 0: stat = "Opened"
-        #        print ("\t ---Lane:",laneStat[L][1],stat,"Offset from Ref. Point:",int(laneStat[L][3]),"meters")
-        #    pass
-        #pass                                            
-
-###
-#       Do for workers present/not present zone?          
-###
-
-        #if wpStatIdx > 0:                                       #have workers present/not present
-        #    print ("\n ---Workers present/not present offset from the Ref. Point in meters---")
-        #    for w in range(0, wpStatIdx):
-        #        print ("\t ---Workers Present @ data point:",wpStat[w][0],wpStat[w][1],"Offset:",wpStat[w][2])
-        #    pass
-        #pass                                            
+            if (refPtIdx != 0):
+                wzLen = wzLen + float(row[6])/sampleFreq    #add distance travel to wzLen
+                                                                #end of input file = for loop
         
 
 ### totDataPt = len(list(pathPt))                               #total data points THIS VARIABLE IS NOT USED...
@@ -256,6 +177,8 @@ def buildVehPathData_LaneStat (vehPathDataFile,totalLanes,pathPt,laneStat,wpStat
     atRefPoint[0] = refPtIdx
     atRefPoint[1] = int(wzLen)
     atRefPoint[2] = float(appHeading)
+    atRefPoint[3] = maxHDOP
+
     
     ###print ("in Func...", atRefPoint)
 
