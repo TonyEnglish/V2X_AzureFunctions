@@ -1,20 +1,7 @@
 {
   "IsEncrypted": false,
   "Values": {
-    "WEBSITE_SLOT_NAME": "Production",
-    "GoogleMapsAPIKey": "AIzaSyB6C5lgal0QWlYqp9AS6LHtAqTG9fH9GPA",
-    "destinationStorage": "DefaultEndpointsProtocol=https;AccountName=neaeraiotstorage;AccountKey=gSFq2szM88ag0BV/J7QqzoXdak1aIGsUgyWagsR/96mlVnQhdOTnns6D7z8nOgRUdQy3FdbMxEmufrCqmE6mdw==;EndpointSuffix=core.windows.net",
-    "ScmType": "None",
-    "WEBSITE_AUTH_ENABLED": "False",
-    "WEBSITE_RUN_FROM_PACKAGE": "1",
-    "APPLICATIONINSIGHTS_CONNECTION_STRING": "InstrumentationKey=705ed8f8-e9ed-460e-a7ef-d23b5aed6305",
-    "APPINSIGHTS_INSTRUMENTATIONKEY": "705ed8f8-e9ed-460e-a7ef-d23b5aed6305",
-    "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "DefaultEndpointsProtocol=https;AccountName=storageaccountiothu8955;AccountKey=r5UtFdMKCTxX/Mb9pmOlznIe7WTGTzZYSy4SIbOpFweguOvOZFmrzIrCsT0yyzljV7xjzX8S2J+qRo6DWRZlxg==;EndpointSuffix=core.windows.net",
-    "WEBSITE_CONTENTSHARE": "ingest-unzip8c54",
-    "FUNCTIONS_EXTENSION_VERSION": "~3",
-    "nearaiotstorage_storage": "DefaultEndpointsProtocol=https;AccountName=neaeraiotstorage;AccountKey=gSFq2szM88ag0BV/J7QqzoXdak1aIGsUgyWagsR/96mlVnQhdOTnns6D7z8nOgRUdQy3FdbMxEmufrCqmE6mdw==;EndpointSuffix=core.windows.net",
-    "FUNCTIONS_WORKER_RUNTIME": "dotnet",
-    "WEBSITE_SITE_NAME": "ingest-unzip",
-    "AzureWebJobsStorage": "DefaultEndpointsProtocol=https;AccountName=storageaccountiothu8955;AccountKey=r5UtFdMKCTxX/Mb9pmOlznIe7WTGTzZYSy4SIbOpFweguOvOZFmrzIrCsT0yyzljV7xjzX8S2J+qRo6DWRZlxg==;EndpointSuffix=core.windows.net"
+    "AzureWebJobsStorage": "",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet"
   }
 }
