@@ -142,16 +142,10 @@ def buildVehPathData_LaneStat (vehPathDataFile,totalLanes,pathPt,laneStat,wpStat
 #               Workers present / not present Marker
 ###
             if marker == "WP" or marker == "WP+RP":         #WP Flag
-                #print ("WP FOUND", row[8], row[9])
-                # row[9] = row[9].upper()
-                if row[9] == "True":  wp = 1
-                if row[9] == "False": wp = 0
+                wp = 1
+                if row[9].upper() == "FALSE": wp = 0
                 wpStat.insert(wpStatIdx,list((rowKt,wp,int(wzLen)))) #WP Status flag (converted from boolean to 0/1), location and offset from Ref Point
                 wpStatIdx += 1                              #incr index
-                stat = "Start"
-                if row[9] == "False": stat = "End"
-                #print ("wpStat: ", wpStatIdx, wpStat)
-                #print (" --- *** ---",stat,"of workers present - ", row[9], "@ data point", rowKt,"(Lat,Lon,Alt):",row[3], row[4], row[5])
 ###
 #               Insert(save) vehicle path data point to pathPt array ...
 ###
