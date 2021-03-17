@@ -86,8 +86,10 @@ from . import wz_msg_segmentation
 #   Following added to read and parse WZ config file
 ###
 
-import  configparser                                    #config file parser 
 
+connect_str_env_var = 'neaeraiotstorage_storage'
+connect_str = os.getenv(connect_str_env_var)
+blob_service_client = BlobServiceClient.from_connection_string(connect_str)
 
 ### ------------------------------------------------------------------------------------------------------------------
 #
@@ -162,8 +164,6 @@ def configRead(file):
 #   Added: Aug. 2018
 #
 ### -------------------------------------------------------------------------------------------------------
-
-
     
 # Read configuration file
 def getConfigVars():
@@ -303,18 +303,21 @@ def getConfigVars():
     contactEmail            = wzConfig['metadata']['contact_email']
     issuingOrganization     = wzConfig['metadata']['issuing_organization']
 
-    mapImageZoom            = wzConfig['ImageInfo']['Zoom']
-    mapImageCenterLat       = wzConfig['ImageInfo']['Center']['Lat']
-    mapImageCenterLon       = wzConfig['ImageInfo']['Center']['Lon']
-    mapImageMarkers         = wzConfig['ImageInfo']['Markers'] # Markers:List of {Name, Color, Location {Lat, Lon, ?Elev}}
-    marker_list = []
-    for marker in mapImageMarkers:
-        marker_list.append("markers=color:" + marker['Color'].lower() + "|label:" + marker['Name'] + "|" + str(marker['Location']['Lat']) + "," + str(marker['Location']['Lon']) + "|")
-    mapImageMapType         = wzConfig['ImageInfo']['MapType']
-    mapImageHeight          = wzConfig['ImageInfo']['Height']
-    mapImageWidth           = wzConfig['ImageInfo']['Width']
-    mapImageFormat          = wzConfig['ImageInfo']['Format']
-    mapImageString          = wzConfig['ImageInfo']['ImageString']
+    try:
+        mapImageZoom            = wzConfig['ImageInfo']['Zoom']
+        mapImageCenterLat       = wzConfig['ImageInfo']['Center']['Lat']
+        mapImageCenterLon       = wzConfig['ImageInfo']['Center']['Lon']
+        mapImageMarkers         = wzConfig['ImageInfo']['Markers'] # Markers:List of {Name, Color, Location {Lat, Lon, ?Elev}}
+        marker_list = []
+        for marker in mapImageMarkers:
+            marker_list.append("markers=color:" + marker['Color'].lower() + "|label:" + marker['Name'] + "|" + str(marker['Location']['Lat']) + "," + str(marker['Location']['Lon']) + "|")
+        mapImageMapType         = wzConfig['ImageInfo']['MapType']
+        mapImageHeight          = wzConfig['ImageInfo']['Height']
+        mapImageWidth           = wzConfig['ImageInfo']['Width']
+        mapImageFormat          = wzConfig['ImageInfo']['Format']
+        mapImageString          = wzConfig['ImageInfo']['ImageString']
+    except KeyError:
+        pass
 
 ###
 #   ------------------------- End of getConfigVars -----------------------
@@ -403,6 +406,10 @@ def build_messages():
     devnull = open(os.devnull, 'w')
 
     while currSeg <= totSeg:                                #repeat for all segments
+        logMsg("Segment Number: " + str(currSeg))
+        logMsg("Segment Range: " + str(msgSegList[currSeg+1][1] - 1) + " - " + str(msgSegList[currSeg+1][2]))
+        logMsg("AppMapPt Length: " + str(len(appMapPt)))
+        
 
 ###
 ### Create and open output xml file...
@@ -473,7 +480,6 @@ def build_messages():
         rsm['MessageFrame']['value']['RoadsideSafetyMessage']['rszContainer'] = rszContainer
 
         rsmSegments.append(rsm)
-
         if not noRSM:
             rsm_xml = xmltodict.unparse(rsm, short_empty_elements=True, pretty=True, indent='  ')
             xmlFile.write(rsm_xml)
@@ -483,11 +489,19 @@ def build_messages():
 
             linux = subprocess.check_output(['uname', '-a'], stderr=subprocess.STDOUT).decode('utf-8')
             logMsg("Linux Installation Information: " + str(linux))
+            # try:
+                # p = subprocess.Popen(['./EventGridTrigger1/jvm/bin/java', '-jar', './EventGridTrigger1/CVMsgBuilder_xmltouper_v8.jar', str(xml_outFile), str(uper_outFile)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                # output, err = p.communicate(b"input data that is passed to subprocess' stdin")
+                # # rc = p.returncode
+                # logMsg('ERROR: RSM UPER conversion FAILED. Output: ' + str(output))
+                # logMsg('ERROR: RSM UPER conversion FAILED. Error: ' + str(err))
             subprocess.call(['./EventGridTrigger1/jvm/bin/java', '-jar', './EventGridTrigger1/CVMsgBuilder_xmltouper_v8.jar', str(xml_outFile), str(uper_outFile)]) #jre1.8.0_261-i586/bin/ jvm/java-11-openjdk-amd64/bin/  ,stdout=devnull
-            logMsg("Uper file size: " + str(os.stat(uper_outFile).st_size))
+            # except Exception as e:
+                # logMsg('ERROR: RSM UPER conversion FAILED. Message: ' + str(e))
+            
             if not os.path.exists(uper_outFile) or os.stat(uper_outFile).st_size == 0:
                 logMsg('ERROR: UPER FILE DOES NOT EXIST OR HAS SIZE 0')
-                logMsg('ERROR: RSM UPER conversion FAILED, ensure that you have java installed (>=1.8 or jdk>=8) and added to your system path')
+                logMsg('ERROR: RSM UPER conversion FAILED, ')
             #     print('RSM Binary conversion FAILED', 'RSM Binary (UPER) conversion failed\nEnsure that you have java installed (version>=1.8 or jdk>=8) and added to your system path\nThen run WZ_BuildMsgs_and_Export.pyw')
             #     # logMsg('Exiting Application')
             #     logFile.close()
@@ -527,7 +541,14 @@ def build_messages():
     info['types_of_work'] = typeOfWork
     info['lanes_obj'] = lanes_obj
     # logMsg('Converting RSM XMl to WZDx message')
-    wzdx = rsm_2_wzdx_translator.wzdx_creator(rsmSegments, dataLane, info)
+    wzdx = {}
+    try:
+        wzdx = rsm_2_wzdx_translator.wzdx_creator(rsmSegments, dataLane, info)
+        logMsg("WZDx message generated and validated successfully")
+    except Exception as e:
+        logMsg("ERROR: WZDx Message Generation Failed: "+ str(e))
+        uploadLogFile()
+        raise e
     wzdxFile.write(json.dumps(wzdx, indent=2))
     wzdxFile.close()
 
@@ -554,20 +575,29 @@ def startMainProcess(vehPathDataFile):
     global  msgSegList                                              #WZ message segmentation list
 ##  global  wzMapBuiltSuccess                                       #WZ map built successful or not flag
 ##  wzMapBuiltSuccess = False                                       #Default set to False                                  
+    
+    csvList = []
     csvList = list(csv.reader(open(vehPathDataFile)))
 
     timeRegex = '[0-9]{2}(:[0-9]{2}){3}'
-    time1 = re.search(timeRegex, str(csvList[1])).group(0)
-    time2 = re.search(timeRegex, str(csvList[2])).group(0)
-    diffmSec = (int(time2[9:11]) - int(time1[9:11])) / 100
-    diffSec = int(time2[6:8]) - int(time1[6:8])
-    sampleFreq = 1/(diffSec + diffmSec)
+    lastIndex = len(csvList) - 1
+    logMsg('Length of CSV data: ' + str(lastIndex))
+    time1 = re.search(timeRegex, str(csvList[1])).group(0).split(':')
+    time2 = re.search(timeRegex, str(csvList[lastIndex])).group(0).split(':')
+
+    deltaTime = (int(time2[0])-int(time1[0]))*3600 + (int(time2[1])-int(time1[1]))*60 + (int(time2[2])-int(time1[2])) + (int(time2[3])-int(time1[3]))/100
+    # diffmSec = (int(time2[9:11]) - int(time1[9:11])) / 100
+    # diffSec = int(time2[6:8]) - int(time1[6:8])
+    if (deltaTime) != 0:
+        sampleFreq = lastIndex/deltaTime
+    else:
+        sampleFreq = 10
     if sampleFreq < 1 or sampleFreq > 10:
         sampleFreq = 10
-    print(sampleFreq)
+
+    logMsg('Sample Frequency: ' + str(sampleFreq))
 
     totRows = len(csvList) - 1      ###total records or lines in file
-    csvList = []
 
     # logMsg('*** - '+wzDesc+' - ***')    
     # logMsg('--- Processing Input File: '+vehPathDataFile+', Total input lines: '+str(totRows))
@@ -582,10 +612,11 @@ def startMainProcess(vehPathDataFile):
 #   Updated on Aug. 23, 2018
 #   
 ###
+    logMsg('Length of Path Point Before: ' + str(len(pathPt)))
 
     atRefPoint  = [0,0,0,0]                                             #temporary list to hold return values from function below 
     wz_vehpath_lanestat_builder.buildVehPathData_LaneStat(vehPathDataFile,totalLanes,pathPt,laneStat,wpStat,refPoint,atRefPoint,sampleFreq)
-
+    logMsg('Length of Path Points After: ' + str(len(pathPt)))
     refPtIdx    = atRefPoint[0]
     wzLen       = atRefPoint[1]
     appHeading  = atRefPoint[2]
@@ -640,7 +671,11 @@ def startMainProcess(vehPathDataFile):
 
     wzMapLen = [0,0]                                    #both approach and wz mapped length
     laneType = 1                                        #approach lanes
+    logMsg(str(laneType) + ', ' + str(len(pathPt)) + ', ' + str(len(appMapPt)) + ', ' + str(laneWidth) + ', ' + str(lanePadApp) + ', ' + str(refPtIdx) + ', ' + str(appMapPtDist))
+    logMsg(str(laneStat) + ',' + str(wpStat) + ', ' + str(dataLane) + ', ' + str(wzMapLen) + ', ' + str(speedList) + ', ' + str(sampleFreq))
     wz_map_constructor.getLanePt(laneType,pathPt,appMapPt,laneWidth,lanePadApp,refPtIdx,appMapPtDist,laneStat,wpStat,dataLane,wzMapLen,speedList,sampleFreq)
+    logMsg('Length of Approach Points: ' + str(len(appMapPt)))
+    logMsg('Length of Path Point: ' + str(len(pathPt)))
 
     # logMsg(' --- Mapped Approach Lanes: '+str(int(wzMapLen[0]))+' meters')
 
@@ -653,7 +688,11 @@ def startMainProcess(vehPathDataFile):
 ###
     
     laneType    = 2                                     #wz lanes
+
+    logMsg('Length of Work Zone Points Before: ' + str(len(wzMapPt)))
     wz_map_constructor.getLanePt(laneType,pathPt,wzMapPt,laneWidth,lanePadWZ,refPtIdx,wzMapPtDist,laneStat,wpStat,dataLane,wzMapLen,speedList,sampleFreq)
+    logMsg('Length of Work Zone Points After: ' + str(len(wzMapPt)))
+    logMsg('Length of Path Point: ' + str(len(pathPt)))
 
     # logMsg(' --- Mapped Work zone Lanes: '+str(int(wzMapLen[1]))+' meters')
 
@@ -776,83 +815,6 @@ def uploadLogFile():
 ##
 #   ---------------------------- END of Functions... -----------------------------------------
 ##
-
-
-wzConfig        = {}
-
-###
-#   --------------------------------------------------------------------------------------------------
-###
-#   Get current date and time...
-###
-
-cDT = datetime.datetime.now().strftime('%m/%d/%Y - ') + time.strftime('%H:%M:%S')
-
-###
-#   Map builder output log file...
-###
-
-
-### --------------------------------------------------------------------------------------------------
-#       Following are local variables with set default values...
-#
-#	Setup array for collected data for mapping, construcyed node points for approach and WZ lanes, and
-#       reference point
-### --------------------------------------------------------------------------------------------------
-
-pathPt          = []			#test vehicle path data points generated by WZ_VehPathDataAcq.py module
-appMapPt        = [] 		        #array to hold approach lanes map node points
-wzMapPt         = []                    #array to hold wz lanes map node points
-refPoint        = [0,0,0]               #Ref. point (lat, lon, alt), initial value... ONLY ONE reference point...
-appHeading      = 0                     #applicable Heading to the WZ event at the ref. point. Needed for XML for RSM Message
-
-###
-#	Variables for book keeping...
-###
-
-refPtIdx        = 0                     #index into pathPt array where the reference point is...
-gotRefPt        = False                 #default 
-
-###
-#	For fixed equidistant node selection for approach and WZ lanes
-#
-#       As of Feb. 2018 --  Node point selection based on equidistant is NO LONGER in use...
-#                           Replace by dynamic node point selection based on right triangle using change in heading angle method... 
-###
-
-appMapPtDist    = 50                    #set distance in meters between map data points for approach lanes - not used in the algo.
-wzMapPtDist     = 200	                #set distance in meters between map data point for WZ map - not used in the algo.
-
-###
-#	Keep track of lane status such as point where lane closed or open is marked within WZ for each lane
-#       including offset from ref. pt.
-#
-#       Contains 4 elements - [data point#, lane#, lane status (0-open/1-closed), offset from ref. point)  
-###
-
-laneStat        = []                    #contains lane status, data point#, lane #, 0/1 0=open, 1=closed and offset from ref point.
-                                        #Generated from lane closed/opened marker from colleted data
-laneStatIdx     = 0                     #laneStat + lcOffset array index
-
-###
-#	Keep track of workers present status such as point where they are present and then not present at **road level**
-#       including offset from the reference point
-###
-
-wpStat          = []                    #array to hold WP location, WP status and offset from ref. point default - no workers present
-wpStatIdx       = 0                     #wpStat array index    
-
-###
-#       Work zone length
-###
-
-wzLen           = 0                     #init WZ length
-
-msgSegList      = []                    #WZ message node segmentation list
-
-files_list      = []
-
-ctrDT   = datetime.datetime.now().strftime('%Y%m%d-') + time.strftime('%H%M%S')
 
 logFileName = tempfile.gettempdir() + '/data_collection_log.txt'
 local_updated_config_path = tempfile.gettempdir() + '/updatedConfig.json'
@@ -996,9 +958,109 @@ def calcZoomLevel(north, south, east, west, pixelWidth, pixelHeight):
 #
 ###############################################################################################
 
+def initVars():
+    global wzConfig
+    global cDT
+    global pathPt
+    global appMapPt
+    global wzMapPt
+    global refPoint
+    global appHeading
+    global refPtIdx
+    global gotRefPt
+    global appMapPtDist
+    global wzMapPtDist
+    global laneStat
+    global laneStatIdx
+    global wpStat
+    global wpStatIdx
+    global wzLen
+    global msgSegList
+    global files_list
+    global ctrDT
+
+    wzConfig        = {}
+
+    ###
+    #   --------------------------------------------------------------------------------------------------
+    ###
+    #   Get current date and time...
+    ###
+
+    cDT = datetime.datetime.now().strftime('%m/%d/%Y - ') + time.strftime('%H:%M:%S')
+
+    ###
+    #   Map builder output log file...
+    ###
+
+
+    ### --------------------------------------------------------------------------------------------------
+    #       Following are local variables with set default values...
+    #
+    #	Setup array for collected data for mapping, construcyed node points for approach and WZ lanes, and
+    #       reference point
+    ### --------------------------------------------------------------------------------------------------
+
+    pathPt          = []			#test vehicle path data points generated by WZ_VehPathDataAcq.py module
+    appMapPt        = [] 		        #array to hold approach lanes map node points
+    wzMapPt         = []                    #array to hold wz lanes map node points
+    refPoint        = [0,0,0]               #Ref. point (lat, lon, alt), initial value... ONLY ONE reference point...
+    appHeading      = 0                     #applicable Heading to the WZ event at the ref. point. Needed for XML for RSM Message
+
+    ###
+    #	Variables for book keeping...
+    ###
+
+    refPtIdx        = 0                     #index into pathPt array where the reference point is...
+    gotRefPt        = False                 #default 
+
+    ###
+    #	For fixed equidistant node selection for approach and WZ lanes
+    #
+    #       As of Feb. 2018 --  Node point selection based on equidistant is NO LONGER in use...
+    #                           Replace by dynamic node point selection based on right triangle using change in heading angle method... 
+    ###
+
+    appMapPtDist    = 50                    #set distance in meters between map data points for approach lanes - not used in the algo.
+    wzMapPtDist     = 200	                #set distance in meters between map data point for WZ map - not used in the algo.
+
+    ###
+    #	Keep track of lane status such as point where lane closed or open is marked within WZ for each lane
+    #       including offset from ref. pt.
+    #
+    #       Contains 4 elements - [data point#, lane#, lane status (0-open/1-closed), offset from ref. point)  
+    ###
+
+    laneStat        = []                    #contains lane status, data point#, lane #, 0/1 0=open, 1=closed and offset from ref point.
+                                            #Generated from lane closed/opened marker from colleted data
+    laneStatIdx     = 0                     #laneStat + lcOffset array index
+
+    ###
+    #	Keep track of workers present status such as point where they are present and then not present at **road level**
+    #       including offset from the reference point
+    ###
+
+    wpStat          = []                    #array to hold WP location, WP status and offset from ref. point default - no workers present
+    wpStatIdx       = 0                     #wpStat array index    
+
+    ###
+    #       Work zone length
+    ###
+
+    wzLen           = 0                     #init WZ length
+
+    msgSegList      = []                    #WZ message node segmentation list
+
+    files_list      = []
+
+    ctrDT   = datetime.datetime.now().strftime('%Y%m%d-') + time.strftime('%H%M%S')
+
 def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateImage):
     global blob_service_client
     global name_id
+    global files_list
+
+    initVars()
     # wzID = 'sample-work-zone--white-rock-cir'
     # vehPathDataFile = './WZ_VehPathData/path-data--' + wzID + '.csv'
     # local_config_path = './Config Files/config--' + wzID + '.json'
@@ -1007,6 +1069,14 @@ def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateIm
     logMsg('*** Running Message Builder and Export ***')
     logMsg(str(datetime.datetime.now()))
     inputFileDialog(local_config_path)
+
+    description = wzDesc.lower().strip().replace(' ', '-')
+    road_name = roadName.lower().strip().replace(' ', '-')
+    name_id = description + '--' + road_name
+    logMsg('WZID: ' + str(name_id))
+
+    if not mapImageString:
+        updateImage = True
 
     if updateImage:
         updateConfigImage(vehPathDataFile)
@@ -1063,11 +1133,11 @@ def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateIm
     # logMsg('Removing local configuration file: ' + local_config_path)
     # os.remove(local_config_path)
 
-    connect_str_env_var = 'neaeraiotstorage_storage'
-    connect_str = os.getenv(connect_str_env_var)
-    #print('\nDownloading blob to \n\t' + download_file_path)
+    # connect_str_env_var = 'neaeraiotstorage_storage'
+    # connect_str = os.getenv(connect_str_env_var)
+    # print('\nDownloading blob to \n\t' + download_file_path)
     # logMsg('Loaded connection string from environment variable: ' + connect_str_env_var)
-    blob_service_client = BlobServiceClient.from_connection_string(connect_str)
+    # blob_service_client = BlobServiceClient.from_connection_string(connect_str)
     # container_client = blob_service_client.get_container_client('unzippedworkzonedatauploads')
     container_name = 'workzonedatauploads'
 

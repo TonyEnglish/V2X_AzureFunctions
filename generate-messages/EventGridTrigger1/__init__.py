@@ -7,11 +7,10 @@ from urllib.request import urlopen
 import azure.functions as func
 from azure.storage.blob import BlobServiceClient
 
-from . import buildmsgs_and_export # Must be here to re-initialize variables every time
 # sys.path.append(os.path.abspath(os.path.join(os.path.dirname('buildmsgs_and_export.py'))))
 
 def main(event: func.EventGridEvent):
-
+    from . import buildmsgs_and_export # Must be here to re-initialize variables every time
     result = json.dumps({
         'id': event.id,
         'data': event.get_json(),
@@ -25,6 +24,7 @@ def main(event: func.EventGridEvent):
     updateImage = False
     if '--update-image' in fileName:
         updateImage = True
+
     wzID = fileName.replace('path-data', '').replace('.csv', '').replace('--update-image', '')
 
     csv_path = tempfile.gettempdir() + '/path-data.csv'
@@ -54,4 +54,4 @@ def main(event: func.EventGridEvent):
     #     f.write(json.dumps(parameters))
 
     buildmsgs_and_export.build_messages_and_export(wzID, csv_path, config_path, updateImage)
-    sys.exit(0)
+    # sys.exit(0)
