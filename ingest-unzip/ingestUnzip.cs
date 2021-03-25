@@ -97,7 +97,6 @@ namespace Company.Function
                                         log.LogInformation("Unable to identify file: " + str + "/" + blobName);
                                     if (isConfig)
                                     {
-                                        BlobClient blockBlobConfig = configContainerClient.GetBlobClient(blobName);
                                         string filePath = Path.GetTempPath() + "\\configFile";
                                         string end = new StreamReader(fileStream).ReadToEnd();
 
@@ -105,13 +104,32 @@ namespace Company.Function
 
                                         metadata = new Dictionary<string, string>
                                         {
-                                            { "center_lat", (string)configObj["ImageInfo"]["Center"]["Lat"] },
-                                            { "center_lon", (string)configObj["ImageInfo"]["Center"]["Lon"] }
+                                            { "group_id",                Guid.NewGuid().ToString()},
+                                            { "start_date",              (string)configObj["Schedule"]["StartDate"]},
+                                            { "end_date",                (string)configObj["Schedule"]["EndDate"]},
+                                            { "road_name",               (string)configObj["GeneralInfo"]["RoadName"]},
+                                            { "issuing_organization",    (string)configObj["metadata"]["issuing_organization"]},
+                                            { "beginning_lat",           (string)configObj["Location"]["BeginningLocation"]["Lat"]},
+                                            { "beginning_lon",           (string)configObj["Location"]["BeginningLocation"]["Lon"]},
+                                            { "ending_lat",              (string)configObj["Location"]["EndingLocation"]["Lat"]},
+                                            { "ending_lon",              (string)configObj["Location"]["EndingLocation"]["Lon"]},
                                         };
+
+                                        double center_lat = (double.Parse((string)configObj["Location"]["BeginningLocation"]["Lat"]) +
+                                            double.Parse((string)configObj["Location"]["EndingLocation"]["Lat"])) / 2;
+                                        double center_lon = (double.Parse((string)configObj["Location"]["BeginningLocation"]["Lon"]) +
+                                            double.Parse((string)configObj["Location"]["EndingLocation"]["Lon"])) / 2;
+
+                                        foreach (KeyValuePair<string, string> address in getAddress(center_lat, center_lon, log))
+                                        {
+                                            metadata.Add(address);
+                                        }
+
                                         log.LogInformation("metadata: " + metadata);
 
                                         if (configUpdated)
                                         {
+                                            BlobClient blockBlobConfig = configContainerClient.GetBlobClient(blobName);
                                             if (needsImage)
                                             {
                                                 configObj["ImageInfo"]["ImageString"] = getMapString(configObj, log);
@@ -126,8 +144,8 @@ namespace Company.Function
                                             }
 
                                             File.Delete(filePath);
+                                            blockBlobConfig = null;
                                         }
-                                        blockBlobConfig = null;
                                         filePath = null;
                                     }
                                 }
@@ -152,7 +170,7 @@ namespace Company.Function
             }
             catch (Exception ex)
             {
-                log.LogInformation("Error! Something went wrong: " + ex.Message);
+                log.LogInformation("Error! Something went wrong: " + ex.ToString());
             }
         }
 
@@ -203,6 +221,50 @@ namespace Company.Function
             using (WebClient webClient = new WebClient())
                 webClient.DownloadFile(address, fileName);
             return fileName;
+        }
+
+        public static Dictionary<string, string> getAddress(double lat, double lon, ILogger log)
+        {
+            Dictionary<string, string> metadata = new Dictionary<string, string>();
+
+            string requestFormat = "https://maps.googleapis.com/maps/api/geocode/json?latlng={0},{1}&key={2}";
+            string apiKey = Environment.GetEnvironmentVariable("GoogleMapsAPIKey");
+            string request = string.Format(requestFormat, lat, lon, apiKey);
+
+            string response;
+
+            using (WebClient webClient = new WebClient())
+                response = webClient.DownloadString(request);
+            log.LogInformation(response);
+
+            JObject addressObj = JObject.Parse(response);
+
+            string countyKey = "administrative_area_level_2";
+            string stateKey = "administrative_area_level_1";
+            string countryKey = "country";
+
+            JObject countyObj = (JObject)addressObj["results"][0]["address_components"].Where(obj => obj["types"].Contains(countyKey));
+            metadata.Add("county_names",
+                string.Join(",", new List<string>() {
+                    (string)countyObj["short_name"],
+                    (string)countyObj["long_name"]
+                }));
+
+            JObject stateObj = (JObject)addressObj["results"][0]["address_components"].Where(obj => obj["types"].Contains(stateKey));
+            metadata.Add("state_names",
+                string.Join(",", new List<string>() {
+                    (string)stateObj["short_name"],
+                    (string)stateObj["long_name"]
+                }));
+
+            JObject countryObj = (JObject)addressObj["results"][0]["address_components"].Where(obj => obj["types"].Contains(countryKey));
+            metadata.Add("country_names",
+                string.Join(",", new List<string>() {
+                    (string)countryObj["short_name"],
+                    (string)countryObj["long_name"]
+                }));
+
+            return metadata;
         }
     }
 }
