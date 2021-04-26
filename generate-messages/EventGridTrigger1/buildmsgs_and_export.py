@@ -32,7 +32,7 @@ import subprocess
 import urllib
 import requests
 import base64
-
+import copy
 import tempfile
 
 ###
@@ -53,15 +53,15 @@ import requests
 
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 
-from . import wz_vehpath_lanestat_builder
+import wz_vehpath_lanestat_builder
 
-from . import wz_map_constructor
+import wz_map_constructor
 
-from . import wz_xml_builder
+import wz_xml_builder
 
-from . import rsm_2_wzdx_translator
+import rsm_2_wzdx_translator
 
-from . import wz_msg_segmentation
+import wz_msg_segmentation
 
 
 ###
@@ -79,37 +79,9 @@ from . import wz_msg_segmentation
 #
 ###
 
-###
-
-
-###
-#   Following added to read and parse WZ config file
-###
-
-
 connect_str_env_var = 'neaeraiotstorage_storage'
 connect_str = os.getenv(connect_str_env_var)
 blob_service_client = BlobServiceClient.from_connection_string(connect_str)
-
-# ------------------------------------------------------------------------------------------------------------------
-#
-#   Local methods/functions...
-###
-
-###
-#   ACTIONS... input file dialog...
-###
-
-
-def inputFileDialog(filename):
-
-    if len(filename):
-        configRead(filename)
-    pass
-
-##
-#   -------------- End of input_file_dialog ------------------
-##
 
 
 def configRead(file):
@@ -124,7 +96,7 @@ def configRead(file):
         except Exception as e:
             logMsg('ERROR: Configuration file read failed: ' +
                    file + '\n' + str(e))
-            uploadLogFile()
+            # uploadLogFile()
             raise e
     else:
         logMsg('Configuration file NOT FOUND')
@@ -327,6 +299,103 @@ def getConfigVars():
 ###
 
 
+
+def segmentToContainers(wzMapPt, numLanes, speedLimits):
+    reducedSpeedZones = []
+    workersPresentZones = []
+    laneClosureZones = []
+
+    # index of None means no index
+    # Lane closure: 0 = open, 1 = closed
+    laneClosureStartIndices = [[None, 0]] * numLanes #[[None, 0], [4, 1]] -> lane 1 open, lane 2 closed at index 4
+    laneClosure = {}
+
+    # Not using lane taper information
+    # # Lane taper: 0 = no taper, 1 = taper-right, 2 = taper-left, 3=none, 4=either
+    # laneTaperStartIndices = [[None, 0]] * len(laneStat) #[[None, 0], [4, 1]] -> lane 1 not tapering, lane 2 tapering right at index 4
+    # laneTaper = {}
+    
+    # Lane closure: 0 = not present, 1 = present
+    laneClosureStartIndices = None
+    workersPresent = {}
+
+    reducedSpeedLimitActive     = True
+    lanesClosureActive          = False
+    workersPresentActive        = False
+
+    allOpenLaneStat = [False] * numLanes
+    prevLaneStat    = [False] * numLanes
+    prevWpStat      = False
+
+    initialGeometry = []
+    for i in range(numLanes):
+        initialGeometry.append(copy.deepcopy([]))
+    
+    for index, node in enumerate(wzMapPt):
+        # 0: latitude
+        # 1: longitude
+        # 2: altitude
+        # 3: lane closure stat
+        # 4: lane taper stat
+        # repeated for n lanes...
+
+        # 5: bearing
+        # 6: wp stat
+        # 7: distance
+
+        lane = 0
+
+        latitude        = node[lane*5 + 0]
+        longitude       = node[lane*5 + 1]
+        altitude        = node[lane*5 + 2]
+        laneStat = []
+        for i in range(numLanes):
+            laneStat.append(node[i*5 + 3] == 1)
+        # laneTaperStat   = node[lane*5 + 4]
+        bearing         = node[(numLanes-1)*5 + 5]
+        wpStat          = node[(numLanes-1)*5 + 6] == 1
+        distance        = node[(numLanes-1)*5 + 7]
+
+        if laneStat != prevLaneStat:
+            logMsg("laneStat change: " + str(laneStat) + ", at " + str(index))
+            prevLaneStat = laneStat
+            if laneStat == allOpenLaneStat:
+                lanesClosureActive = False
+            else:
+                lanesClosureActive = True
+                laneClosureZones.append({'laneStat': laneStat, 'geometry': copy.deepcopy(initialGeometry)})
+        
+        if wpStat != prevWpStat or index == 0:
+            logMsg("wpStat change: " + str(wpStat) + ", at " + str(index))
+            prevWpStat = wpStat
+            if wpStat == False:
+                workersPresentActive = False
+                reducedSpeedZones.append({'speedLimit': speedLimits[0], 'geometry': copy.deepcopy(initialGeometry)})
+            else:
+                workersPresentActive = True
+                workersPresentZones.append({'speedLimit': speedLimits[1], 'geometry': copy.deepcopy(initialGeometry)})
+                reducedSpeedZones.append({'speedLimit': speedLimits[1], 'geometry': copy.deepcopy(initialGeometry)})
+            
+        if reducedSpeedLimitActive:
+            logMsg("rsz: " + str(reducedSpeedZones))
+            for i in range(numLanes):
+                nodeGeometry = [node[i*5 + 0], node[i*5 + 1], node[i*5 + 2]]
+                reducedSpeedZones[-1]['geometry'][i].append(nodeGeometry)
+        
+        if lanesClosureActive:
+            logMsg("lc: " + str(reducedSpeedZones))
+            for i in range(numLanes):
+                nodeGeometry = [node[i*5 + 0], node[i*5 + 1], node[i*5 + 2]]
+                laneClosureZones[-1]['geometry'][i].append(nodeGeometry)
+        
+        # if workersPresentActive:
+        #     for i in range(numLanes):
+        #         nodeGeometry = [node[i*5 + 0], node[i*5 + 1], node[i*5 + 2]]
+        #         workersPresentZones[-1]['geometry'][i].append(nodeGeometry)
+
+    return (reducedSpeedZones, workersPresentZones, laneClosureZones)
+
+
 def build_messages():
     global files_list
 
@@ -377,7 +446,7 @@ def build_messages():
 ###
 
     speedLimit = ['vehicleMaxSpeed', speedList[0], speedList[1],
-                  speedList[2], 'mph']  # NEW Version of XER... Nov. 2017
+                  speedList[2]]
 
 # -------------------------------------------------
 #
@@ -398,12 +467,14 @@ def build_messages():
     totSeg = msgSegList[0][0]  # total message segments
     rsmSegments = []
 
-    wzdx_outFile = tempfile.gettempdir() + '/WZDx_File-' + ctrDT + '.geojson'
+    wzdx_outFile = './output_files/WZDx_File-' + ctrDT + '.geojson'
     logMsg('WZDx output file path: ' + wzdx_outFile)
     wzdxFile = open(wzdx_outFile, 'w')
     files_list.append(wzdx_outFile)
 
     devnull = open(os.devnull, 'w')
+
+    reducedSpeedZones, workersPresentZones, laneClosureZones = segmentToContainers(wzMapPt, laneStat[0][0], speedLimit[1:])
 
     while currSeg <= totSeg:  # repeat for all segments
         logMsg("Segment Number: " + str(currSeg))
@@ -411,18 +482,17 @@ def build_messages():
                str(msgSegList[currSeg+1][1] - 1) + " - " + str(msgSegList[currSeg+1][2]))
         logMsg("AppMapPt Length: " + str(len(appMapPt)))
 
-
 ###
 # Create and open output xml file...
 ###
         if noRSM:
             logMsg('Accuracy too low, not adding RSM files to files_list ')
         else:
-            xml_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + \
+            xml_outFile = './output_files/RSZW_MAP_xml_File-' + ctrDT + '-' + \
                 str(currSeg)+'_of_'+str(totSeg)+'.xml'
             logMsg('RSM XML output file path: ' + xml_outFile)
 
-            uper_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + \
+            uper_outFile = './output_files/RSZW_MAP_xml_File-' + ctrDT + '-' + \
                 str(currSeg)+'_of_'+str(totSeg)+'.uper'
             logMsg('RSM UPER output file path: ' + uper_outFile)
 
@@ -456,12 +526,16 @@ def build_messages():
                         wzMapPt[startNode-1][dL+1], wzMapPt[startNode-1][dL+2])
         pass
 
+        heading = {'heading': appHeading, 'tolerance': hTolerance}
 
 ###
 #   Build xml for common container...
 ###
-        commonContainer = wz_xml_builder.build_xml_CC(idList, wzStart, wzEnd, timeOffset, wzDaysOfWeek, c_sc_codes, newRefPt, appHeading, hTolerance,
-                                                      speedLimit, laneWidth, roadWidth, eventLength, laneStat, appMapPt, msgSegList, currSeg, wzDesc)
+        commonContainer = wz_xml_builder.buildCommonContainer(idList[1], wzStart, wzEnd, timeOffset, wzDaysOfWeek, c_sc_codes, newRefPt, 
+            heading, laneWidth, roadWidth, laneStat[0][0], appMapPt, wzDesc)
+
+        # commonContainer = wz_xml_builder.build_xml_CC(idList, wzStart, wzEnd, timeOffset, wzDaysOfWeek, c_sc_codes, newRefPt, appHeading, hTolerance,
+        #                                                   speedLimit, laneWidth, roadWidth, eventLength, laneStat, appMapPt, msgSegList, currSeg, wzDesc)
 
 ###
 #       WZ length, LC characteristic, workers present, etc.
@@ -472,19 +546,47 @@ def build_messages():
         RN = False  # Boolean - True: Generate reduced nodes for closed lanes
         #        - False: Generate all nodes for closed lanes
 ###
-#   Build WZ container
+#   Build WZ containers
 ###
-        rszContainer = wz_xml_builder.build_xml_WZC(
-            speedLimit, laneWidth, laneStat, wpStat, wzMapPt, RN, msgSegList, currSeg)
+        # reducedSpeedZones, workersPresentZones, laneClosureZones
+        rszContainers = []
+        for rsz in reducedSpeedZones:
+            speedLimit = {
+                'type': 'vehicleMaxSpeed',
+                'value': rsz['speedLimit']
+            }
+            rszContainer = wz_xml_builder.buildRszContainer(speedLimit, rsz['geometry'], laneWidth)
+            rszContainers.append(rszContainer)
+
+        laneClosureContainers = []
+        for laneClosure in laneClosureZones:
+            laneClosureContainer = wz_xml_builder.buildLaneClosureContainer(laneClosure['laneStat'], None, laneClosure['geometry'], laneWidth)
+            laneClosureContainers.append(laneClosureContainer)
+
+        situationalContainer = {}
+        if workersPresentZones:
+            situationalContainer = wz_xml_builder.buildSituationalContainer(None, None, True, None)
 
         rsm = {}
-        rsm['MessageFrame'] = {}
-        rsm['MessageFrame']['messageId'] = idList[0]
-        rsm['MessageFrame']['value'] = {}
-        rsm['MessageFrame']['value']['RoadsideSafetyMessage'] = {}
-        rsm['MessageFrame']['value']['RoadsideSafetyMessage']['version'] = 1
-        rsm['MessageFrame']['value']['RoadsideSafetyMessage']['commonContainer'] = commonContainer
-        rsm['MessageFrame']['value']['RoadsideSafetyMessage']['rszContainer'] = rszContainer
+        # rsm['MessageFrame'] = {}
+        # rsm['MessageFrame']['messageId'] = idList[0]
+        # rsm['MessageFrame']['value'] = {}
+        rsm['RoadsideSafetyMessage'] = {}
+        rsm['RoadsideSafetyMessage']['commonContainer'] = commonContainer
+        if rszContainers:
+            if len(rszContainers) > 1:
+                rsm['RoadsideSafetyMessage']['rszContainers'] = {}
+                rsm['RoadsideSafetyMessage']['rszContainers']['rszContainer'] = rszContainers
+            else:
+                rsm['RoadsideSafetyMessage']['rszContainer'] = rszContainers
+        if laneClosureContainers:
+            if len(laneClosureContainers) > 1:
+                rsm['RoadsideSafetyMessage']['laneClosureContainers'] = {}
+                rsm['RoadsideSafetyMessage']['laneClosureContainers']['laneClosureContainer'] = laneClosureContainers
+            else:
+                rsm['RoadsideSafetyMessage']['laneClosureContainer'] = laneClosureContainers
+        if situationalContainer:
+            rsm['RoadsideSafetyMessage']['situationalContainer'] = situationalContainer
 
         rsmSegments.append(rsm)
         if not noRSM:
@@ -494,27 +596,27 @@ def build_messages():
 
             xmlFile.close()
 
-            linux = subprocess.check_output(
-                ['uname', '-a'], stderr=subprocess.STDOUT).decode('utf-8')
-            logMsg("Linux Installation Information: " + str(linux))
-            try:
-                p = subprocess.Popen(['./EventGridTrigger1/jvm/bin/java', '-jar', './EventGridTrigger1/CVMsgBuilder_xmltouper_v8.jar', str(
-                    xml_outFile), str(uper_outFile)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                output, err = p.communicate(
-                    b"input data that is passed to subprocess' stdin")
-                # rc = p.returncode
-                logging.error(
-                    'ERROR: RSM UPER conversion FAILED. Output: ' + str(output))
-                logging.error(
-                    'ERROR: RSM UPER conversion FAILED. Error: ' + str(err))
-            except Exception as e:
-                logging.error(
-                    'ERROR: RSM UPER conversion FAILED. Message: ' + str(e))
-            # subprocess.call(['./EventGridTrigger1/jvm/bin/java', '-jar', './EventGridTrigger1/CVMsgBuilder_xmltouper_v8.jar', str(xml_outFile), str(uper_outFile)]) #,stdout=devnull
+            # linux = subprocess.check_output(
+            #     ['uname', '-a'], stderr=subprocess.STDOUT).decode('utf-8')
+            # logMsg("Linux Installation Information: " + str(linux))
+            # try:
+            #     p = subprocess.Popen(['./EventGridTrigger1/jvm/bin/java', '-jar', './EventGridTrigger1/CVMsgBuilder_xmltouper_v8.jar', str(
+            #         xml_outFile), str(uper_outFile)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            #     output, err = p.communicate(
+            #         b"input data that is passed to subprocess' stdin")
+            #     # rc = p.returncode
+            #     logging.error(
+            #         'ERROR: RSM UPER conversion FAILED. Output: ' + str(output))
+            #     logging.error(
+            #         'ERROR: RSM UPER conversion FAILED. Error: ' + str(err))
+            # except Exception as e:
+            #     logging.error(
+            #         'ERROR: RSM UPER conversion FAILED. Message: ' + str(e))
+            # # subprocess.call(['./EventGridTrigger1/jvm/bin/java', '-jar', './EventGridTrigger1/CVMsgBuilder_xmltouper_v8.jar', str(xml_outFile), str(uper_outFile)]) #,stdout=devnull
 
-            if not os.path.exists(uper_outFile) or os.stat(uper_outFile).st_size == 0:
-                logging.error('ERROR: UPER FILE DOES NOT EXIST OR HAS SIZE 0')
-                logging.error('ERROR: RSM UPER conversion FAILED')
+            # if not os.path.exists(uper_outFile) or os.stat(uper_outFile).st_size == 0:
+            #     logging.error('ERROR: UPER FILE DOES NOT EXIST OR HAS SIZE 0')
+            #     logging.error('ERROR: RSM UPER conversion FAILED')
 
         currSeg = currSeg+1
     pass
@@ -553,7 +655,7 @@ def build_messages():
     # logMsg('Converting RSM XMl to WZDx message')
     wzdx = {}
     try:
-        wzdx = rsm_2_wzdx_translator.wzdx_creator(rsmSegments, dataLane, info)
+        wzdx = rsm_2_wzdx_translator.wzdx_creator(rsmSegments, int(dataLane), info)
         logMsg("WZDx message generated and validated successfully")
     except Exception as e:
         logMsg("ERROR: WZDx Message Generation Failed: " + str(e))
@@ -644,6 +746,7 @@ def startMainProcess(vehPathDataFile):
         noRSM = False
         logMsg('GPS Accuracy high enough, max value of HDOP: ' + str(maxHDOP) +
                ' is greater than the limit of ' + str(maxAllowableHDOP) + '. RSM messages will be uploaded')
+    noRSM = False
 
     # logMsg(' --- Start of Work Zone at Data Point: '+str(refPtIdx))
     # logMsg('Reference Point @ '+refPoint[0]+', '+refPoint[1]+', '+refPoint[2])
@@ -708,6 +811,8 @@ def startMainProcess(vehPathDataFile):
     laneType = 2  # wz lanes
 
     logMsg('Length of Work Zone Points Before: ' + str(len(wzMapPt)))
+
+    # Append all nodes to wzMapPt
     wz_map_constructor.getLanePt(laneType, pathPt, wzMapPt, laneWidth, lanePadWZ, refPtIdx,
                                  wzMapPtDist, laneStat, wpStat, dataLane, wzMapLen, speedList, sampleFreq)
     logMsg('Length of Work Zone Points After: ' + str(len(wzMapPt)))
@@ -817,6 +922,7 @@ def openLog():
 
 def logMsg(msg):
     formattedTime = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S') + '+00:00'
+    print('[' + formattedTime + '] ' + msg)
     logFile.write('[' + formattedTime + '] ' + msg + '\n')
 
 
@@ -829,9 +935,6 @@ def uploadArchive(zip_name, container_name):
         blob_client.upload_blob(data, overwrite=True)
 
     uploadLogFile()
-
-    # logMsg('Closing log file in Message Builder and Export')
-    # logFile.close()
     print('Upload Successful', 'Data upload successful! Please navigate to\nhttp://www.neaeraconsulting.com/V2x_Verification\nto view and verify the mapped workzone.\nYou will find your data under\n' + name_id)
 
 
@@ -846,10 +949,10 @@ def uploadLogFile():
 ##
 
 
-logFileName = tempfile.gettempdir() + '/data_collection_log.txt'
-local_updated_config_path = tempfile.gettempdir() + '/updatedConfig.json'
+logFileName = './output_files/data_collection_log.txt'
+local_updated_config_path = './output_files/updatedConfig.json'
 # logFile = ''
-mapFileName = tempfile.gettempdir() + '/mapImage.png'
+mapFileName = './output_files/mapImage.png'
 
 
 def updateConfigImage(vehPathDataFile):
@@ -1120,7 +1223,7 @@ def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateIm
     openLog()
     logMsg('*** Running Message Builder and Export ***')
     logMsg(str(datetime.datetime.now()))
-    inputFileDialog(local_config_path)
+    configRead(local_config_path)
 
     description = wzDesc.lower().strip().replace(' ', '-')
     road_name = roadName.lower().strip().replace(' ', '-')
@@ -1145,7 +1248,7 @@ def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateIm
     road_name = roadName.lower().strip().replace(' ', '-')
     name_id = description + '--' + road_name
     # logMsg('Work zone name id: ' + name_id)
-    zip_name = tempfile.gettempdir() + '/wzdc-exports--' + name_id + '.zip'
+    zip_name = './output_files/wzdc-exports--' + name_id + '.zip'
     logMsg('Creating zip archive: ' + zip_name)
 
     zipObj = zipfile.ZipFile(zip_name, 'w')
@@ -1195,3 +1298,15 @@ def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateIm
     container_name = 'workzonedatauploads'
 
     uploadArchive(zip_name, container_name)
+
+
+# def main():
+#     wzID = 'sample-work-zone--white-rock-cir-2'
+#     vehPathDataFile = './sample_files/path-data--' + wzID + '.csv'
+#     local_config_path = './sample_files/config--' + wzID + '.json'
+#     build_messages_and_export(wzID, vehPathDataFile,
+#                               local_config_path, False)
+
+
+# if __name__ == "__main__":
+#     main()
