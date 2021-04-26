@@ -61,6 +61,7 @@ import wz_xml_builder
 import wz_xml_builder_v22
 
 import rsm_2_wzdx_translator
+import rsm_2_wzdx_translator_v22
 
 import wz_msg_segmentation
 
@@ -685,7 +686,7 @@ def build_messages():
     wzdx = {}
     try:
         # TODO: Translate to WZDx
-        # wzdx = rsm_2_wzdx_translator.wzdx_creator(rsmSegments, dataLane, info)
+        wzdx = rsm_2_wzdx_translator_v22.wzdx_creator(rsmSegments, int(dataLane), info)
         logMsg("WZDx message generated and validated successfully")
     except Exception as e:
         logMsg("ERROR: WZDx Message Generation Failed: " + str(e))
