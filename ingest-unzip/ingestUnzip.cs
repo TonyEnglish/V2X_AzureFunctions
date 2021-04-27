@@ -83,11 +83,8 @@ namespace Company.Function
                                 str = "rsm-xmlfiles";
                             else if (blobName.Contains(".uper"))
                                 str = "rsm-uperfiles";
-                            log.LogInformation("Upload path: " + str + "/" + blobName);
-                            log.LogInformation("blob list: " + blobsToUpload.Count);
                             BlobClient blockBlobReference = containerClient.GetBlobClient(str + "/" + blobName);
                             blobsToUpload.Add(new Tuple<BlobClient, ZipArchiveEntry>(blockBlobReference, entry));
-                            log.LogInformation("blob list: " + blobsToUpload.Count);
 
                             if (isConfig)
                             {
@@ -124,8 +121,6 @@ namespace Company.Function
                                         {
                                             metadata.Add(address);
                                         }
-
-                                        log.LogInformation("metadata: " + metadata);
 
                                         if (configUpdated)
                                         {
@@ -235,34 +230,52 @@ namespace Company.Function
 
             using (WebClient webClient = new WebClient())
                 response = webClient.DownloadString(request);
-            log.LogInformation(response);
 
             JObject addressObj = JObject.Parse(response);
 
             string countyKey = "administrative_area_level_2";
             string stateKey = "administrative_area_level_1";
             string countryKey = "country";
+            string zipKey = "postal_code";
 
-            JObject countyObj = (JObject)addressObj["results"][0]["address_components"].Where(obj => obj["types"].Contains(countyKey));
-            metadata.Add("county_names",
-                string.Join(",", new List<string>() {
-                    (string)countyObj["short_name"],
-                    (string)countyObj["long_name"]
-                }));
-
-            JObject stateObj = (JObject)addressObj["results"][0]["address_components"].Where(obj => obj["types"].Contains(stateKey));
-            metadata.Add("state_names",
-                string.Join(",", new List<string>() {
-                    (string)stateObj["short_name"],
-                    (string)stateObj["long_name"]
-                }));
-
-            JObject countryObj = (JObject)addressObj["results"][0]["address_components"].Where(obj => obj["types"].Contains(countryKey));
-            metadata.Add("country_names",
-                string.Join(",", new List<string>() {
-                    (string)countryObj["short_name"],
-                    (string)countryObj["long_name"]
-                }));
+            foreach (JObject address in addressObj["results"][0]["address_components"])
+            {
+                foreach (JValue type in address["types"])
+                {
+                    if (type.ToString() == countyKey)
+                    {
+                        metadata.Add("county_names",
+                            string.Join(",", new List<string>() {
+                            (string)address["short_name"],
+                            (string)address["long_name"]
+                            }));
+                    }
+                    else if (type.ToString() == stateKey)
+                    {
+                        metadata.Add("state_names",
+                            string.Join(",", new List<string>() {
+                            (string)address["short_name"],
+                            (string)address["long_name"]
+                            }));
+                    }
+                    else if (type.ToString() == countryKey)
+                    {
+                        metadata.Add("country_names",
+                            string.Join(",", new List<string>() {
+                            (string)address["short_name"],
+                            (string)address["long_name"]
+                            }));
+                    }
+                    else if (type.ToString() == zipKey)
+                    {
+                        metadata.Add("zip_code",
+                            string.Join(",", new List<string>() {
+                            (string)address["short_name"],
+                            (string)address["long_name"]
+                            }));
+                    }
+                }
+            }
 
             return metadata;
         }

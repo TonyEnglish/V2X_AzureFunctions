@@ -53,15 +53,15 @@ import requests
 
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 
-import wz_vehpath_lanestat_builder
+from . import wz_vehpath_lanestat_builder
 
-import wz_map_constructor
+from . import wz_map_constructor
 
-import wz_xml_builder
+from . import wz_xml_builder
 
-import rsm_2_wzdx_translator
+from . import rsm_2_wzdx_translator
 
-import wz_msg_segmentation
+from . import wz_msg_segmentation
 
 
 ###
@@ -467,7 +467,7 @@ def build_messages():
     totSeg = msgSegList[0][0]  # total message segments
     rsmSegments = []
 
-    wzdx_outFile = './output_files/WZDx_File-' + ctrDT + '.geojson'
+    wzdx_outFile = tempfile.gettempdir() + '/WZDx_File-' + ctrDT + '.geojson'
     logMsg('WZDx output file path: ' + wzdx_outFile)
     wzdxFile = open(wzdx_outFile, 'w')
     files_list.append(wzdx_outFile)
@@ -488,11 +488,11 @@ def build_messages():
         if noRSM:
             logMsg('Accuracy too low, not adding RSM files to files_list ')
         else:
-            xml_outFile = './output_files/RSZW_MAP_xml_File-' + ctrDT + '-' + \
+            xml_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + \
                 str(currSeg)+'_of_'+str(totSeg)+'.xml'
             logMsg('RSM XML output file path: ' + xml_outFile)
 
-            uper_outFile = './output_files/RSZW_MAP_xml_File-' + ctrDT + '-' + \
+            uper_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + \
                 str(currSeg)+'_of_'+str(totSeg)+'.uper'
             logMsg('RSM UPER output file path: ' + uper_outFile)
 
@@ -949,10 +949,10 @@ def uploadLogFile():
 ##
 
 
-logFileName = './output_files/data_collection_log.txt'
-local_updated_config_path = './output_files/updatedConfig.json'
+logFileName = tempfile.gettempdir() + '/data_collection_log.txt'
+local_updated_config_path = tempfile.gettempdir() + '/updatedConfig.json'
 # logFile = ''
-mapFileName = './output_files/mapImage.png'
+mapFileName = tempfile.gettempdir() + '/mapImage.png'
 
 
 def updateConfigImage(vehPathDataFile):
@@ -1248,7 +1248,7 @@ def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateIm
     road_name = roadName.lower().strip().replace(' ', '-')
     name_id = description + '--' + road_name
     # logMsg('Work zone name id: ' + name_id)
-    zip_name = './output_files/wzdc-exports--' + name_id + '.zip'
+    zip_name = tempfile.gettempdir() + '/wzdc-exports--' + name_id + '.zip'
     logMsg('Creating zip archive: ' + zip_name)
 
     zipObj = zipfile.ZipFile(zip_name, 'w')
