@@ -124,9 +124,9 @@ def getChordLength(pt1, pt2):
 #   dataLane    lane on which the vehicle was driven for collecting vehicle path data
 ###
 
-def insertMapPt(mapPt, pathPt, elementPos, tLanes, laneWidth, dL, lcwpStat, distVec, laneTaperStat):
+def insertMapPt(mapPt, pathPt, elementPos, tLanes, laneWidth, dL, lcwpStat, distVec, laneTaperStat, currSpeedLimit):
     
-    lla_ls_hwp  = [0]*((5*(tLanes))+3)                  #define llah list - 4 elements per node data point (lat,lon,alt,lo/lc)+heading+dist
+    lla_ls_hwp  = [0]*((5*(tLanes))+4)                  #define llah list - 4 elements per node data point (lat,lon,alt,lo/lc)+heading+dist
                                                         #LO/LC (0/1), WP (0/1) status added on 11/13/2017
 
     bearingPP = pathPt[elementPos][4]            #bearing (heading) of the path point
@@ -184,8 +184,8 @@ def insertMapPt(mapPt, pathPt, elementPos, tLanes, laneWidth, dL, lcwpStat, dist
         if ln == tLanes - 1:                        #if the current ln same as the last lane
             lla_ls_hwp[ln*5+5] = bearingPP          #add heading in the table
             lla_ls_hwp[ln*5+6] = lcwpStat[tLanes]   #add WP Status for the node in the table
-        ####lla_ls_hwp[ln*5+7] = int(dist)          #add computed distVec, distance in meters from prev. node point in the table for future use
             lla_ls_hwp[ln*5+7] = int(distVec)       #add computed distVec, distance in meters from prev. node point in the table for future use
+            lla_ls_hwp[ln*5+8] = currSpeedLimit     #add current speed limit in mph
             ##print ("bearingPP: ", refPt, bearingPP)
         pass                                        #end of if ln
                 
@@ -222,6 +222,7 @@ def getLanePt(laneType,pathPt,mapPt,laneWidth,lanePad,refPtIdx,mapPtDist,laneSta
     distFromLC = 0
     incrDistLC = False
     taperLength = speedList[0]*(laneWidth + lanePad)*3.28084
+    currSpeedLimit = speedList[1]
 
     if speedList[0] <= 40:
         taperLength = ((laneWidth + lanePad)*3.28084*(speedList[0]**2)) / 60
@@ -233,7 +234,7 @@ def getLanePt(laneType,pathPt,mapPt,laneWidth,lanePad,refPtIdx,mapPtDist,laneSta
     if laneType == 1:
         if refPtIdx < 3:
             for i in range(0, refPtIdx):
-                insertMapPt(mapPt, pathPt, i, tLanes, laneWidth, dL, lcwpStat, distVec, laneTaperStat)
+                insertMapPt(mapPt, pathPt, i, tLanes, laneWidth, dL, lcwpStat, distVec, laneTaperStat, currSpeedLimit)
                 distVec += pathPt[i][0]/dataFreq
                 # Rework to use actualChordLength
                 return
@@ -251,7 +252,7 @@ def getLanePt(laneType,pathPt,mapPt,laneWidth,lanePad,refPtIdx,mapPtDist,laneSta
     totalDist = 0
     incrementDist = 0
     taperingLane = 0
-    insertMapPt(mapPt, pathPt, i-2, tLanes, laneWidth, dL, lcwpStat, distVec, laneTaperStat)
+    insertMapPt(mapPt, pathPt, i-2, tLanes, laneWidth, dL, lcwpStat, distVec, laneTaperStat, currSpeedLimit)
 
     while i < stopIndex:
     # Step A
@@ -311,7 +312,11 @@ def getLanePt(laneType,pathPt,mapPt,laneWidth,lanePad,refPtIdx,mapPtDist,laneSta
             for wpZone in range(0, len(wpStat)):
                 if wpStat[wpZone][0] == i-1:                      #got WP Zone True/False
                     requiredNode = True                               #set to True 
-                    lcwpStat[tLanes] = wpStat[wpZone][1]   #toggle WP Zone status
+                    lcwpStat[tLanes] = wpStat[wpZone][1]   #update WP Zone status
+                    if wpStat[wpZone][1] == 1:
+                        currSpeedLimit = speedList[2]
+                    else:
+                        currSpeedLimit = speedList[1]
                 pass
             pass
         pass
@@ -349,7 +354,7 @@ def getLanePt(laneType,pathPt,mapPt,laneWidth,lanePad,refPtIdx,mapPtDist,laneSta
         if actualError > ALLOWABLEERROR or requiredNode:
             incrementDist = actualChordLength
             totalDist += incrementDist
-            insertMapPt(mapPt, pathPt, i-1, tLanes, laneWidth, dL, lcwpStat, totalDist, laneTaperStat)
+            insertMapPt(mapPt, pathPt, i-1, tLanes, laneWidth, dL, lcwpStat, totalDist, laneTaperStat, currSpeedLimit)
 
             Pstarting = pathPt[i-1]
             Pprevious = pathPt[i]
@@ -366,7 +371,7 @@ def getLanePt(laneType,pathPt,mapPt,laneWidth,lanePad,refPtIdx,mapPtDist,laneSta
         if i == stopIndex:
             incrementDist = actualChordLength
             totalDist += incrementDist
-            insertMapPt(mapPt, pathPt, i-1, tLanes, laneWidth, dL, lcwpStat, totalDist, laneTaperStat)
+            insertMapPt(mapPt, pathPt, i-1, tLanes, laneWidth, dL, lcwpStat, totalDist, laneTaperStat, currSpeedLimit)
 
         if incrDistLC:
             distFromLC += (pathPt[i - 1][0] * 3.28084)/dataFreq

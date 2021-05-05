@@ -1,5 +1,5 @@
 def buildCommonContainer(eventId, startDateTime, endDateTime, timeOffset, wzDaysOfWeek, causeCodes, refPoint, heading, 
-    laneWidth, rW, numlanes, arrayMapPt, descName):
+    laneWidth, rW, numlanes, geometry, descName, linkedEventIdList):
 
     ###
     #       Following data are passed from the caller for constructing Common Container...
@@ -113,22 +113,17 @@ def buildCommonContainer(eventId, startDateTime, endDateTime, timeOffset, wzDays
     commonContainer['regionInfo']['approachRegion']['paths'] = {}
 
     commonContainer['regionInfo']['approachRegion']['paths']['path'] = []
-
-    ln = 0
-    while ln < numlanes:
-
+    
+    for lane in geometry:
         Path = {}
         Path['pathWidth'] = laneWidth
         Path['pathPoints'] = {}
         Path['pathPoints']['pathPoint'] = []
 
-        kt = 0
-        while kt < len(arrayMapPt):  # lat/lon/alt for each data point
-            NodePoint = {}
-
-            lat = int((arrayMapPt[kt][ln*5+0]) * 10000000)
-            lon = int((arrayMapPt[kt][ln*5+1]) * 10000000)
-            elev = round(arrayMapPt[kt][ln*5+2])  # in full meters only
+        for node in lane:
+            lat = int(node[0] * 10000000)
+            lon = int(node[1] * 10000000)
+            elev = round(node[2])  # in full meters
 
             NodePoint = {}
             NodePoint['nodePoint'] = {}
@@ -136,16 +131,16 @@ def buildCommonContainer(eventId, startDateTime, endDateTime, timeOffset, wzDays
             NodePoint['nodePoint']['node-3Dabsolute']['lat'] = lat
             NodePoint['nodePoint']['node-3Dabsolute']['long'] = lon
             NodePoint['nodePoint']['node-3Dabsolute']['elevation'] = elev
-
+            
             Path['pathPoints']['pathPoint'].append(NodePoint)
-            kt = kt + 1  # incr row (next node point for same lane
-            # end of while
 
         commonContainer['regionInfo']['approachRegion']['paths']['path'].append(
             Path)
-        ln = ln + 1  # next lane
-
-    # TODO: commonContainer['crossLinking'] (optional)
+    
+    if linkedEventIdList:
+        commonContainer['crossLinking'] = {}
+        commonContainer['crossLinking']['rsmLinks'] = {}
+        commonContainer['crossLinking']['rsmLinks']['rsmLink'] = linkedEventIdList
 
     return commonContainer
 
