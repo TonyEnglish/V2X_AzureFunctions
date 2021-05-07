@@ -80,33 +80,23 @@ def wzdx_creator(messages, dataLane, info):
     ids['sub_identifier'] = sub_identifier
     ids['road_event_id'] = road_event_id
     wzdxMessages = []
+
+    containers = {
+      'commonContainers': []
+      'rszContainers': []
+      'laneClosureContainers': []
+    }
+
     for message in messages:
         rsm = message['RoadsideSafetyMessage']
-        containers = {
-          'commonContainer': {},
-          'rszContainers': {
-            'rszContainer': []
-          },
-          'laneClosureContainers': {
-            'laneClosureContainer': []
-          }
-        }
 
-        containers['commonContainer'] = rsm['commonContainer']
+        containers['commonContainers'].append(rsm['commonContainer'])
 
-        if rsm.get('rszContainers', {}).get('rszContainer'):
-            containers['rszContainers']['rszContainer'] = rsm['rszContainers']['rszContainer']
-        elif rsm.get('rszContainer'):
-            containers['rszContainers']['rszContainer'] = [rsm['rszContainer']]
+        if rsm.get('rszContainer'):
+            containers['rszContainers'].append('rszContainer': rsm['rszContainer'], 'workersPresent': rsm.get('situationalContainer') != None)
 
-        if rsm.get('laneClosureContainers', {}).get('laneCLosureContainer'):
-            containers['laneClosureContainers']['laneClosureContainer'] = rsm['laneClosureContainers']['laneCLosureContainer']
-        elif rsm.get('laneClosureContainer'):
-            containers['laneClosureContainers']['laneClosureContainer'] = rsm['laneClosureContainer']
-
-        workersPresent = False
-        if rsm.get('situationalContainer') or rsm.get('situationalContainers'):
-            workersPresent = True
+        if rsm.get('laneCLosureContainer'):
+            containers['laneClosureContainers'].append(rsm['laneClosureContainer'])
 
         numLanes = len(containers['commonContainer']['regionInfo'].get('approachRegion', {}).get('paths', {}).get('path', []))
 
@@ -127,7 +117,7 @@ def wzdx_creator(messages, dataLane, info):
 
         nodes, indices = getNodesAndIndices(containers, numLanes, dataLane, initialLaneStatus)
         
-        wzdxMessages = createWzdxMessages(nodes, indices, numLanes, initialLaneStatus, restrictions, containers['commonContainer'], workersPresent, info)
+        wzdxMessages = createWzdxMessages(nodes, indices, numLanes, initialLaneStatus, restrictions, containers['commonContainers'][0]['commonContainer'], workersPresent, info)
 
     wzd['features'] = wzdxMessages
     wzd = add_ids(wzd, True)
@@ -239,7 +229,44 @@ def getNodesAndIndices(containers, numLanes, dataLane, initialLaneStatus):
 
     return nodes, indices
 
-def createWzdxMessages(nodes, indices, numLanes, initialLaneStatus, restrictions, commonContainer, workersPresent, info):
+
+# def createIndividualWzdxMessage(numLanes, dataLane, restrictions, info, commonContainer, rszContainer = None, laneClosureContainer = None, situationalContainer = None):
+#     prevSpeedlimit = 0
+#     prevLaneStatus = initialLaneStatus
+#     restrictions = []
+
+#     features = []
+
+#     createFeature(node, numLanes, currLaneStatus, currSpeedLimit, restrictions, commonContainer, workersPresent, info)
+
+#     for index, node in enumerate(nodes):
+#         currSpeedLimit = prevSpeedlimit
+#         for speedLimit in indices['speedLimits']:
+#             if speedLimit['startIndex'] == index:
+#                 currSpeedLimit = speedLimit['speedLimit']
+        
+#         currLaneStatus = prevLaneStatus
+#         for laneStatus in indices['laneClosures']:
+#             if index >= laneStatus['startIndex'] and index <= laneStatus['endIndex']:
+#                 currLaneStatus = laneStatus['laneStatus']
+#             else:
+#                 currLaneStatus = initialLaneStatus
+
+#         if currSpeedLimit != prevSpeedlimit or currLaneStatus != prevLaneStatus or index == 0:
+
+#             if (index != 0):
+#                 features[-1]['geometry']['coordinates'].append(node)
+
+#             features.append()
+            
+#             prevSpeedlimit = currSpeedLimit
+#             prevLaneStatus = currLaneStatus
+        
+#         else:
+#             features[-1]['geometry']['coordinates'].append(node)
+#     return features
+
+def createConnectedWzdxMessages(nodes, indices, numLanes, initialLaneStatus, restrictions, commonContainer, workersPresent, info):
     prevSpeedlimit = 0
     prevLaneStatus = initialLaneStatus
     restrictions = []
