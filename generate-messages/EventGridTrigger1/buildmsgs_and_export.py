@@ -425,8 +425,14 @@ def segmentToContainers(appMapPt, wzMapPt, numLanes, speedLimits):
             else:
                 workersPresentActive = True
         
-        if speedLimit != prevSpeedLimit or (reducedSpeedZones and len(reducedSpeedZones[-1]['geometry']) >= MAX_NUM_NODES):
+        if speedLimit != prevSpeedLimit or (reducedSpeedZones and len(reducedSpeedZones[-1]['geometry']) >= MAX_NUM_NODES - 1):
             logMsg("speed limit change or reset: " + str(speedLimit) + ", at node number " + str(index))
+
+            if reducedSpeedZones:
+                for i in range(numLanes):
+                    nodeGeometry = [node[i*5 + 0], node[i*5 + 1], node[i*5 + 2]]
+                    reducedSpeedZones[-1]['geometry'][i].append(nodeGeometry)
+
             prevSpeedLimit = speedLimit
             if speedLimit == defaultSpeedLimit:
                 reducedSpeedLimitActive = False
@@ -438,8 +444,14 @@ def segmentToContainers(appMapPt, wzMapPt, numLanes, speedLimits):
                     'approachGeometry': getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, index),
                     'workersPresent': workersPresentActive})
 
-        if laneStat != prevLaneStat or (laneClosureZones and len(laneClosureZones[-1]['geometry']) >= MAX_NUM_NODES):
+        if laneStat != prevLaneStat or (laneClosureZones and len(laneClosureZones[-1]['geometry']) >= MAX_NUM_NODES - 1):
             logMsg("laneStat change or reset: " + str(laneStat) + ", at node number " + str(index))
+
+            if laneClosureZones:
+                for i in range(numLanes):
+                    nodeGeometry = [node[i*5 + 0], node[i*5 + 1], node[i*5 + 2]]
+                    laneClosureZones[-1]['geometry'][i].append(nodeGeometry)
+
             prevLaneStat = laneStat
             if laneStat == allOpenLaneStat:
                 lanesClosureActive = False
@@ -769,16 +781,16 @@ def build_messages():
 
     info['types_of_work'] = typeOfWork
     info['lanes_obj'] = lanes_obj
-    # logMsg('Converting RSM XMl to WZDx message')
-    # wzdx = {}
-    # try:
-    #     wzdx = rsm_2_wzdx_translator.wzdx_creator(rsmSegments, int(dataLane), info)
-    #     logMsg("WZDx message generated and validated successfully")
-    # except Exception as e:
-    #     logMsg("ERROR: WZDx Message Generation Failed: " + str(e))
-    #     # uploadLogFile()
-    #     raise e
-    # wzdxFile.write(json.dumps(wzdx, indent=2))
+    logMsg('Converting RSM XMl to WZDx message')
+    wzdx = {}
+    try:
+        wzdx = rsm_2_wzdx_translator.wzdx_creator(rsmSegments, int(dataLane), info)
+        logMsg("WZDx message generated and validated successfully")
+    except Exception as e:
+        logMsg("ERROR: WZDx Message Generation Failed: " + str(e))
+        # uploadLogFile()
+        raise e
+    wzdxFile.write(json.dumps(wzdx, indent=2))
     wzdxFile.close()
 
 ###
