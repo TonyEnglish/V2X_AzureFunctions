@@ -54,25 +54,25 @@ import requests
 
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 
-# from . import wz_vehpath_lanestat_builder
+from . import wz_vehpath_lanestat_builder
 
-# from . import wz_map_constructor
+from . import wz_map_constructor
 
-# from . import wz_xml_builder
+from . import wz_xml_builder
 
-# from . import rsm_2_wzdx_translator
+from . import rsm_2_wzdx_translator
 
-# from . import wz_msg_segmentation
+from . import wz_msg_segmentation
 
-import wz_vehpath_lanestat_builder
+# import wz_vehpath_lanestat_builder
 
-import wz_map_constructor
+# import wz_map_constructor
 
-import wz_xml_builder
+# import wz_xml_builder
 
-import rsm_2_wzdx_translator
+# import rsm_2_wzdx_translator
 
-import wz_msg_segmentation
+# import wz_msg_segmentation
 
 
 ###
@@ -92,7 +92,7 @@ import wz_msg_segmentation
 
 connect_str_env_var = 'neaeraiotstorage_storage'
 connect_str = os.getenv(connect_str_env_var)
-# blob_service_client = BlobServiceClient.from_connection_string(connect_str)
+blob_service_client = BlobServiceClient.from_connection_string(connect_str)
 APPROADH_REGION_TIME = 10 #seconds
 MPS_PER_MPH = 0.44704
 MAX_NUM_NODES = 63
@@ -637,11 +637,20 @@ def build_messages():
 
     numRsms = 0
 
+    initialGeometry = []
+    for i in range(len(reducedSpeedZones[0]['geometry'])):
+        initialGeometry.append([])
+
     for rsz in reducedSpeedZones:
         numRsms += 1
 
         for laneClosure in laneClosureZones:
-            if laneClosure['geometry'][0][0] in rsz['geometry'][0]:
+            geometryInRsz = False
+            for i in laneClosure['geometry'][0]:
+                if i[0] in rsz['geometry'][0]:
+                    geometryInRsz = True
+                    break
+            if geometryInRsz:
                 numRsms -= 1
 
     for laneClosure in laneClosureZones:
@@ -669,11 +678,19 @@ def build_messages():
         rszContainer = wz_xml_builder.buildRszContainer(speedLimit, rsz['geometry'], laneWidth)
         rsm['RoadsideSafetyMessage']['rszContainer'] = rszContainer
 
-        for laneClosure in laneClosureZones: 
-            if laneClosure['geometry'][0][0] in rsz['geometry'][0]:
-                laneClosureContainer = wz_xml_builder.buildLaneClosureContainer(laneClosure['laneStat'], None, laneClosure['geometry'], laneWidth)
+        for laneClosure in laneClosureZones:
+            geometry = initialGeometry
+            for index, node in enumerate(laneClosure['geometry'][0]):
+                if node in rsz['geometry'][0]:
+                    for lane, obj in enumerate(laneClosure['geometry']):
+                        geometry[lane].append(obj[index])
+            logMsg("-------------------------")
+            logMsg(geometry)
+
+            if geometry != initialGeometry:
+                laneClosureContainer = wz_xml_builder.buildLaneClosureContainer(laneClosure['laneStat'], None, geometry, laneWidth)
                 rsm['RoadsideSafetyMessage']['laneClosureContainer'] = laneClosureContainer
-                laneClosureZones.remove(laneClosure)
+                # laneClosureZones.remove(laneClosure)
 
         if rsz['workersPresent']:
             situationalContainer = wz_xml_builder.buildSituationalContainer(None, None, True, None)
@@ -682,27 +699,27 @@ def build_messages():
         rsmSegments.append(rsm)
         idIndex += 1
 
-    for laneClosure in laneClosureZones:
-        eventId = getIds(eventIdList, idIndex)
+    # for laneClosure in laneClosureZones:
+    #     eventId = getIds(eventIdList, idIndex)
 
-        rsm = {}
-        rsm['RoadsideSafetyMessage'] = {}
-        commonContainer = wz_xml_builder.buildCommonContainer(eventId, wzStart, wzEnd, timeOffset, wzDaysOfWeek, c_sc_codes, getReferencePoint(laneClosure['geometry'][0]), 
-            heading, laneWidth, roadWidth, laneStat[0][0], laneClosure['approachGeometry'], wzDesc, eventIdList)
-        rsm['RoadsideSafetyMessage']['commonContainer'] = commonContainer
+    #     rsm = {}
+    #     rsm['RoadsideSafetyMessage'] = {}
+    #     commonContainer = wz_xml_builder.buildCommonContainer(eventId, wzStart, wzEnd, timeOffset, wzDaysOfWeek, c_sc_codes, getReferencePoint(laneClosure['geometry'][0]), 
+    #         heading, laneWidth, roadWidth, laneStat[0][0], laneClosure['approachGeometry'], wzDesc, eventIdList)
+    #     rsm['RoadsideSafetyMessage']['commonContainer'] = commonContainer
 
-        laneClosureContainer = wz_xml_builder.buildLaneClosureContainer(laneClosure['laneStat'], None, laneClosure['geometry'], laneWidth)
-        rsm['RoadsideSafetyMessage']['laneClosureContainer'] = laneClosureContainer
+    #     laneClosureContainer = wz_xml_builder.buildLaneClosureContainer(laneClosure['laneStat'], None, laneClosure['geometry'], laneWidth)
+    #     rsm['RoadsideSafetyMessage']['laneClosureContainer'] = laneClosureContainer
 
-        if laneClosure['workersPresent']:
-            situationalContainer = wz_xml_builder.buildSituationalContainer(None, None, True, None)
-            rsm['RoadsideSafetyMessage']['situationalContainer'] = situationalContainer
+    #     if laneClosure['workersPresent']:
+    #         situationalContainer = wz_xml_builder.buildSituationalContainer(None, None, True, None)
+    #         rsm['RoadsideSafetyMessage']['situationalContainer'] = situationalContainer
         
-        if len(eventIdList) < 4:
-            eventIdList.append(eventId)
+    #     if len(eventIdList) < 4:
+    #         eventIdList.append(eventId)
 
-        rsmSegments.append(rsm)
-        idIndex += 1
+    #     rsmSegments.append(rsm)
+    #     idIndex += 1
 
     if not noRSM:
         numSegments = len(rsmSegments)
@@ -1340,7 +1357,7 @@ def initVars():
 
 
 def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateImage):
-    # global blob_service_client
+    global blob_service_client
     global name_id
     global files_list
 
@@ -1414,7 +1431,7 @@ def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateIm
 
     container_name = 'workzonedatauploads'
 
-    # uploadArchive(zip_name, container_name)
+    uploadArchive(zip_name, container_name)
 
 
 def main():

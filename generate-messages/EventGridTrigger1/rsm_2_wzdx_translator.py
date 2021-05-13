@@ -234,6 +234,7 @@ def getNodesAndIndices(containers, numLanes, dataLane, initialLaneStatus):
   return nodes, indices
 
 def convertGeometry(nodes, dataLane = None):
+  print(nodes)
   try:
     dataIndex = dataLane - 1
     if dataLane:
