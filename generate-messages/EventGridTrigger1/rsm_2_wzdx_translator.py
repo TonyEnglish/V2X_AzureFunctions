@@ -81,22 +81,8 @@ def wzdx_creator(messages, dataLane, info):
   ids['road_event_id'] = road_event_id
   wzdxMessages = []
 
-  # containers = {
-  #   'commonContainers': [],
-  #   'rszContainers': [],
-  #   'laneClosureContainers': []
-  # }
-
-  for message in messages:
-    rsm = message['RoadsideSafetyMessage']
-
-    # containers['commonContainers'].append(rsm['commonContainer'])
-
-    # if rsm.get('rszContainer'):
-    #   containers['rszContainers'].append({'rszContainer': rsm['rszContainer'], 'workersPresent': rsm.get('situationalContainer') != None})
-
-    # if rsm.get('laneCLosureContainer'):
-    #   containers['laneClosureContainers'].append(rsm['laneClosureContainer'])
+  for rsmMessage in messages:
+    rsm = rsmMessage['RoadsideSafetyMessage']
 
     numLanes = len(rsm['commonContainer']['regionInfo'].get('approachRegion', {}).get('paths', {}).get('path', []))
 
@@ -116,7 +102,9 @@ def wzdx_creator(messages, dataLane, info):
       initialLaneStatus.append(lane)
 
     # nodes, indices = getNodesAndIndices(containers, numLanes, dataLane, initialLaneStatus)
-    
+
+
+    # Create one WZDx message for one RSM message. Ignore gometry from all containers except reduced speed zone
     wzdxMessages.append(createIndividualWzdxMessage(numLanes, dataLane, initialLaneStatus, restrictions, info,   
                                                     rsm['commonContainer'], 
                                                     rszContainer            = rsm.get('rszContainer'), 
