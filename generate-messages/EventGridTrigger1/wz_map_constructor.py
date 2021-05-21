@@ -19,6 +19,7 @@
 ###
 
 import math
+import logging
 
 
 ###
@@ -247,6 +248,7 @@ def getLanePt(laneType,pathPt,mapPt,laneWidth,lanePad,refPtIdx,mapPtDist,laneSta
     i = startIndex + 2
     Pstarting = pathPt[i-2]
     Pprevious = pathPt[i-1]
+    Pnext = pathPt[i]
     totalDist = 0
     incrementDist = 0
     taperingLane = 0
