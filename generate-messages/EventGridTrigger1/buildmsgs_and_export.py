@@ -62,8 +62,6 @@ from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 
 # from . import rsm_2_wzdx_translator
 
-# from . import wz_msg_segmentation
-
 import wz_vehpath_lanestat_builder
 
 import wz_map_constructor
@@ -71,8 +69,6 @@ import wz_map_constructor
 import wz_xml_builder
 
 import rsm_2_wzdx_translator
-
-import wz_msg_segmentation
 
 
 ###
@@ -310,18 +306,6 @@ def getConfigVars():
     except KeyError:
         pass
 
-###
-#   ------------------------- End of getConfigVars -----------------------
-#
-#
-# --------------------------- Build .js File -----------------------------------
-#
-#   Open js file for writing js arrays for map data points, approach lanes points, wz lanes points and ref. point
-#
-#   js_outFile  - data and array for JavaScript for visualization.
-#                 fixed file name in the visualization directory
-###
-
 
 def getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, currIndex):
     print(currIndex)
@@ -500,16 +484,6 @@ def getIds(Ids, index):
 def build_messages():
     global files_list
 
-
-###
-#   Set
-#       WZ start date and time and end date and time in yyyy,mm,dd,hh,mm
-#       UTC time offset
-#       headway tolerance
-#       road width - NOT used any more...
-#       event length same as workzone length
-###
-
     wzStart = wzStartDate.split('/') + wzStartTime.split(':')
     wzEnd = wzEndDate.split('/') + wzEndTime.split(':')
 
@@ -520,10 +494,6 @@ def build_messages():
     roadWidth = totalLanes*laneWidth*100  # roadWidth in cm
     eventLength = wzLen  # WZ length in meters, computed earlier
 
-
-###
-#   Set speed limits in WZ as vehicle max speed..from user input saved in config file...
-###
 
     speedLimit = ['vehicleMaxSpeed', speedList[0], speedList[1],
                   speedList[2]]

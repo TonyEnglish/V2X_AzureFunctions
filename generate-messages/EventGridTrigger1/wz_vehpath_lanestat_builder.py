@@ -104,7 +104,7 @@ def buildVehPathData_LaneStat (vehPathDataFile,totalLanes,pathPt,laneStat,wpStat
 #               The values are multiplied by 10000000 in the function where xml is being created...
 #
 ###
-            marker = row[8]
+            marker = row[8].upper()
         
             if gotRefPt == False and (marker == "RP" or marker == "LC+RP" or marker == "WP+RP"):    #ref pt marker support for old and new marker                 
                 refPoint[0] = row[3]                        #lat
