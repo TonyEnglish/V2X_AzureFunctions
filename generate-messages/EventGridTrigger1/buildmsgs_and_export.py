@@ -54,21 +54,21 @@ import requests
 
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 
-# from . import wz_vehpath_lanestat_builder
+from . import wz_vehpath_lanestat_builder
 
-# from . import wz_map_constructor
+from . import wz_map_constructor
 
-# from . import wz_xml_builder
+from . import wz_xml_builder
 
-# from . import rsm_2_wzdx_translator
+from . import rsm_2_wzdx_translator
 
-import wz_vehpath_lanestat_builder
+# import wz_vehpath_lanestat_builder
 
-import wz_map_constructor
+# import wz_map_constructor
 
-import wz_xml_builder
+# import wz_xml_builder
 
-import rsm_2_wzdx_translator
+# import rsm_2_wzdx_translator
 
 
 ###
@@ -89,10 +89,10 @@ import rsm_2_wzdx_translator
 connect_str_env_var = 'neaeraiotstorage_storage'
 connect_str = os.getenv(connect_str_env_var)
 
-# logger = logging.getLogger("logger_name")
-# logger.disabled = True
+logger = logging.getLogger("logger_name")
+logger.disabled = True
 
-# blob_service_client = BlobServiceClient.from_connection_string(connect_str, logger=logger)
+blob_service_client = BlobServiceClient.from_connection_string(connect_str, logger=logger)
 
 APPROADH_REGION_TIME = 10 #seconds
 MPS_PER_MPH = 0.44704
@@ -1228,7 +1228,7 @@ def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateIm
 
     container_name = 'workzonedatauploads'
 
-    # uploadArchive(zip_name, container_name)
+    uploadArchive(zip_name, container_name)
 
 
 def main():
