@@ -1,5 +1,5 @@
-def buildCommonContainer(eventId, startDateTime, endDateTime, timeOffset, wzDaysOfWeek, causeCodes, refPoint, heading, 
-    laneWidth, rW, numlanes, geometry, descName, linkedEventIdList):
+def buildCommonContainer(eventId, startDateTime, endDateTime, timeOffset, wzDaysOfWeek, causeCodes, refPoint, heading,
+                         laneWidth, rW, numlanes, geometry, descName, linkedEventIdList):
 
     ###
     #       Following data are passed from the caller for constructing Common Container...
@@ -14,7 +14,7 @@ def buildCommonContainer(eventId, startDateTime, endDateTime, timeOffset, wzDays
     #       appMapPt    = array containing approach map points constructed earlier before calling this function
     #
     ###
-    laneWidth = round(laneWidth * 100)  # define laneWidth in cm
+    laneWidth = round(laneWidth * 10)  # define laneWidth in dm (10 cm)
 
     commonContainer = {}
 
@@ -89,7 +89,8 @@ def buildCommonContainer(eventId, startDateTime, endDateTime, timeOffset, wzDays
     commonContainer['regionInfo'] = {}
 
     commonContainer['regionInfo']['applicableHeading'] = {}
-    commonContainer['regionInfo']['applicableHeading']['heading'] = round(float(heading['heading']))
+    commonContainer['regionInfo']['applicableHeading']['heading'] = round(
+        float(heading['heading']))
     commonContainer['regionInfo']['applicableHeading']['tolerance'] = heading['tolerance']
 
     lat = int(float(refPoint[0]) * 10000000)
@@ -113,7 +114,7 @@ def buildCommonContainer(eventId, startDateTime, endDateTime, timeOffset, wzDays
     commonContainer['regionInfo']['approachRegion']['paths'] = {}
 
     commonContainer['regionInfo']['approachRegion']['paths']['path'] = []
-    
+
     for lane in geometry:
         Path = {}
         Path['pathWidth'] = laneWidth
@@ -131,12 +132,12 @@ def buildCommonContainer(eventId, startDateTime, endDateTime, timeOffset, wzDays
             NodePoint['nodePoint']['node-3Dabsolute']['lat'] = lat
             NodePoint['nodePoint']['node-3Dabsolute']['long'] = lon
             NodePoint['nodePoint']['node-3Dabsolute']['elevation'] = elev
-            
+
             Path['pathPoints']['pathPoint'].append(NodePoint)
 
         commonContainer['regionInfo']['approachRegion']['paths']['path'].append(
             Path)
-    
+
     if linkedEventIdList:
         commonContainer['crossLinking'] = {}
         commonContainer['crossLinking']['rsmLinks'] = {}
@@ -153,21 +154,20 @@ def buildLaneClosureContainer(laneStat, laneStatusVaries, geometry, laneWidth):
     for index, status in enumerate(laneStat):
         laneStatus = {}
         laneStatus['lanePosition'] = index + 1
-        laneStatus['laneClosed'] = {str(status): None}
+        laneStatus['laneClosed'] = {str(status).lower(): None}
         # laneStatus['laneCloseOffset'] = obstacleDistance # NOT IMPLEMENTED
         laneClosureContainer['laneStatus']['laneStatus'].append(laneStatus)
-        
-    if laneStatusVaries is not None:
-        laneClosureContainer['laneStatusVaries'] = {str(laneStatusVaries): None}
 
-    
-    
+    if laneStatusVaries is not None:
+        laneClosureContainer['laneStatusVaries'] = {
+            str(laneStatusVaries).lower(): None}
+
     laneClosureContainer['closureRegion'] = {}
     laneClosureContainer['closureRegion']['paths'] = {}
     laneClosureContainer['closureRegion']['paths']['path'] = []
 
     laneWidth = round(laneWidth * 100)  # in cms
-    
+
     for lane in geometry:
         Path = {}
         Path['pathWidth'] = laneWidth
@@ -185,7 +185,7 @@ def buildLaneClosureContainer(laneStat, laneStatusVaries, geometry, laneWidth):
             NodePoint['nodePoint']['node-3Dabsolute']['lat'] = lat
             NodePoint['nodePoint']['node-3Dabsolute']['long'] = lon
             NodePoint['nodePoint']['node-3Dabsolute']['elevation'] = elev
-            
+
             Path['pathPoints']['pathPoint'].append(NodePoint)
 
         laneClosureContainer['closureRegion']['paths']['path'].append(Path)
@@ -199,14 +199,13 @@ def buildRszContainer(speedLimit, geometry, laneWidth):
     rszContainer['speedLimit'] = {}
     rszContainer['speedLimit']['type'] = {speedLimit['type']: None}
     rszContainer['speedLimit']['speed'] = speedLimit['value']
-    
+
     rszContainer['rszRegion'] = {}
     rszContainer['rszRegion']['paths'] = {}
     rszContainer['rszRegion']['paths']['path'] = []
 
     laneWidth = round(laneWidth * 100)  # in cms
-    
-    
+
     for lane in geometry:
         Path = {}
         Path['pathWidth'] = laneWidth
@@ -224,7 +223,7 @@ def buildRszContainer(speedLimit, geometry, laneWidth):
             NodePoint['nodePoint']['node-3Dabsolute']['lat'] = lat
             NodePoint['nodePoint']['node-3Dabsolute']['long'] = lon
             NodePoint['nodePoint']['node-3Dabsolute']['elevation'] = elev
-            
+
             Path['pathPoints']['pathPoint'].append(NodePoint)
 
         rszContainer['rszRegion']['paths']['path'].append(Path)
@@ -243,9 +242,11 @@ def buildSituationalContainer(obstructions, visibility, peoplePresent, anomalous
         situationalContainer['visibility'] = visibility
 
     if peoplePresent is not None:
-        situationalContainer['peoplePresent'] = {str(peoplePresent): None}
+        situationalContainer['peoplePresent'] = {
+            str(peoplePresent).lower(): None}
 
     if anomalousTraffic is not None:
-        situationalContainer['anomalousTraffic'] = {str(anomalousTraffic): None}
+        situationalContainer['anomalousTraffic'] = {
+            str(anomalousTraffic).lower(): None}
 
     return situationalContainer

@@ -330,6 +330,11 @@ def getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, currInde
             appMapPt, numLanes, startIndex, -1, [])
         geometry = getMapPointsBetweenIndexes(
             wzMapPt, numLanes, 0, currIndex, geometry)
+
+        logging.debug('if')
+        logging.debug(len(geometry))
+        logging.debug(numLanes)
+
         return geometry
     else:
         startIndex = max(findNodeByDistance(wzMapPt, numLanes,
@@ -337,6 +342,11 @@ def getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, currInde
         print(startIndex)
         geometry = getMapPointsBetweenIndexes(
             wzMapPt, numLanes, startIndex, currIndex, [])
+
+        logging.debug('else')
+        logging.debug(len(geometry))
+        logging.debug(numLanes)
+
         return geometry
 
 
@@ -348,12 +358,13 @@ def findNodeByDistance(arr, numLanes, targetDistance):
 
 
 def getMapPointsBetweenIndexes(arr, numLanes, startIndex, endIndex, points):
-    for node in arr[startIndex:endIndex]:
-        point = []
-        for lane in range(numLanes):
-            point.append(
+    points = []
+    for lane in range(numLanes):
+        lane_points = []
+        for node in arr[startIndex:endIndex]:
+            lane_points.append(
                 [node[lane*5 + 0], node[lane*5 + 1], node[lane*5 + 2]])
-        points.append(point)
+        points.append(lane_points)
     return points
 
 
