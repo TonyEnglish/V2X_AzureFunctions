@@ -113,7 +113,7 @@ def wzdx_creator(messages, dataLane, info):
                                                         rszContainer=rsm.get(
                                                             'rszContainer'),
                                                         laneClosureContainer=rsm.get(
-                                                            'laneCLosureContainer'),
+                                                            'laneClosureContainer'),
                                                         situationalContainer=rsm.get('situationalContainer')))
 
     wzd['features'] = wzdxMessages
@@ -178,7 +178,7 @@ def reformatGeometry(pathPoints):
 def transformLaneStatus(numLanes, initialLaneStatus, laneStatus):
     currLaneStatus = copy.deepcopy(initialLaneStatus)
     for index, status in enumerate(laneStatus):
-        if status['laneClosed'].get('True', {}) == None:
+        if status['laneClosed'] == {'true': None}:
             currLaneStatus[index]['status'] = 'closed'
 
     return currLaneStatus
@@ -261,11 +261,11 @@ def createIndividualWzdxMessage(numLanes, dataLane, initialLaneStatus, restricti
     speedLimit = None if not rszContainer else rszContainer.get(
         'speedLimit', {}).get('speed')
     laneStatus = initialLaneStatus if not laneClosureContainer else transformLaneStatus(
-        numLanes, initialLaneStatus, laneClosureContainer.get('laneStatus', []))
+        numLanes, initialLaneStatus, laneClosureContainer['laneStatus']['laneStatus'])
     workersPresent = None
     if situationalContainer and situationalContainer.get('peoplePresent'):
         workersPresent = situationalContainer.get(
-            'peoplePresent') == {'True': None}
+            'peoplePresent') == {'true': None}
     restrictions = []
 
     nodes = []

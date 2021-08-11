@@ -101,6 +101,9 @@ MAX_NUM_NODES = 63
 OPERATOR_ID = "acb6a93b-c9e7-4c67-b90e-c88ecbe5a0ac"
 
 
+logging.getLogger().setLevel(logging.DEBUG)
+
+
 def configRead(file):
     global wzConfig
     if os.path.exists(file):
@@ -331,10 +334,6 @@ def getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, currInde
         geometry = getMapPointsBetweenIndexes(
             wzMapPt, numLanes, 0, currIndex, geometry)
 
-        logging.debug('if')
-        logging.debug(len(geometry))
-        logging.debug(numLanes)
-
         return geometry
     else:
         startIndex = max(findNodeByDistance(wzMapPt, numLanes,
@@ -342,10 +341,6 @@ def getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, currInde
         print(startIndex)
         geometry = getMapPointsBetweenIndexes(
             wzMapPt, numLanes, startIndex, currIndex, [])
-
-        logging.debug('else')
-        logging.debug(len(geometry))
-        logging.debug(numLanes)
 
         return geometry
 
@@ -372,16 +367,6 @@ def segmentToContainers(appMapPt, wzMapPt, numLanes, speedLimits):
     reducedSpeedZones = []
     workersPresentZones = []
     laneClosureZones = []
-
-    # index of None means no index
-    # Lane closure: 0 = open, 1 = closed
-    # [[None, 0], [4, 1]] -> lane 1 open, lane 2 closed at index 4
-    laneClosureStartIndices = [[None, 0]] * numLanes
-    laneClosure = {}
-
-    # Lane closure: 0 = not present, 1 = present
-    laneClosureStartIndices = None
-    workersPresent = {}
 
     reducedSpeedLimitActive = False
     lanesClosureActive = False
@@ -456,9 +441,12 @@ def segmentToContainers(appMapPt, wzMapPt, numLanes, speedLimits):
                     'approachGeometry': getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, index),
                     'workersPresent': workersPresentActive})
 
+        logging.info("laneStat: " +
+                     str(laneStat) + ", at node number " + str(index))
+
         if laneStat != prevLaneStat or (laneClosureZones and len(laneClosureZones[-1]['geometry']) >= MAX_NUM_NODES - 1):
-            logging.debug("laneStat change or reset: " +
-                          str(laneStat) + ", at node number " + str(index))
+            logging.info("laneStat change or reset: " +
+                         str(laneStat) + ", at node number " + str(index))
 
             if laneClosureZones:
                 for i in range(numLanes):
