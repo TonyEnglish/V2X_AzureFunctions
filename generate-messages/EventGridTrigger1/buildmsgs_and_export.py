@@ -32,8 +32,9 @@ import subprocess
 import urllib
 import requests
 import base64
-
+import copy
 import tempfile
+import uuid
 
 ###
 #     Open and read csv file...
@@ -61,7 +62,13 @@ from . import wz_xml_builder
 
 from . import rsm_2_wzdx_translator
 
-from . import wz_msg_segmentation
+# import wz_vehpath_lanestat_builder
+
+# import wz_map_constructor
+
+# import wz_xml_builder
+
+# import rsm_2_wzdx_translator
 
 
 ###
@@ -79,37 +86,22 @@ from . import wz_msg_segmentation
 #
 ###
 
-###
-
-
-###
-#   Following added to read and parse WZ config file
-###
-
-
 connect_str_env_var = 'neaeraiotstorage_storage'
 connect_str = os.getenv(connect_str_env_var)
-blob_service_client = BlobServiceClient.from_connection_string(connect_str)
 
-# ------------------------------------------------------------------------------------------------------------------
-#
-#   Local methods/functions...
-###
+logger = logging.getLogger("logger_name")
+logger.disabled = True
 
-###
-#   ACTIONS... input file dialog...
-###
+blob_service_client = BlobServiceClient.from_connection_string(
+    connect_str, logger=logger)
+
+APPROADH_REGION_TIME = 10  # seconds
+MPS_PER_MPH = 0.44704
+MAX_NUM_NODES = 63
+OPERATOR_ID = "acb6a93b-c9e7-4c67-b90e-c88ecbe5a0ac"
 
 
-def inputFileDialog(filename):
-
-    if len(filename):
-        configRead(filename)
-    pass
-
-##
-#   -------------- End of input_file_dialog ------------------
-##
+logging.getLogger().setLevel(logging.DEBUG)
 
 
 def configRead(file):
@@ -122,12 +114,12 @@ def configRead(file):
             getConfigVars()
 
         except Exception as e:
-            logMsg('ERROR: Configuration file read failed: ' +
-                   file + '\n' + str(e))
-            uploadLogFile()
+            logging.info('ERROR: Configuration file read failed: ' +
+                         file + '\n' + str(e))
             raise e
     else:
-        logMsg('Configuration file NOT FOUND')
+        logging.error('Configuration file NOT FOUND')
+        raise RuntimeError('Configuration file does not exist')
 
 ###
 # ----------------- End of config_read --------------------
@@ -156,7 +148,6 @@ def getConfigVars():
     # General Information
     global wzDesc  # WZ Description
     global roadName
-    global roadNumber
     global direction
     global beginningCrossStreet
     global endingCrossStreet
@@ -226,73 +217,79 @@ def getConfigVars():
 
     global mapFailed
 
-    feed_info_id = wzConfig['FeedInfoID']
+    try:
 
-    wzDesc = wzConfig['GeneralInfo']['Description']
-    roadName = wzConfig['GeneralInfo']['RoadName']
-    roadNumber = wzConfig['GeneralInfo']['RoadNumber']
-    direction = wzConfig['GeneralInfo']['Direction']
-    beginningCrossStreet = wzConfig['GeneralInfo']['BeginningCrossStreet']
-    endingCrossStreet = wzConfig['GeneralInfo']['EndingCrossStreet']
-    beginningMilepost = wzConfig['GeneralInfo']['BeginningMilePost']
-    endingMilepost = wzConfig['GeneralInfo']['EndingMilePost']
-    eventStatus = wzConfig['GeneralInfo']['EventStatus']
-    creationDate = wzConfig['GeneralInfo'].get('CreationDate', '')
-    updateDate = wzConfig['GeneralInfo'].get(
-        'UpdateDate', datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"))
+        feed_info_id = wzConfig['FeedInfoID']
 
-    typeOfWork = wzConfig['TypesOfWork']
-    if not typeOfWork:
-        typeOfWork = []
+        wzDesc = wzConfig['GeneralInfo']['Description']
+        roadName = wzConfig['GeneralInfo']['RoadName']
+        direction = wzConfig['GeneralInfo']['Direction']
+        beginningCrossStreet = wzConfig['GeneralInfo']['BeginningCrossStreet']
+        endingCrossStreet = wzConfig['GeneralInfo']['EndingCrossStreet']
+        beginningMilepost = wzConfig['GeneralInfo']['BeginningMilePost']
+        endingMilepost = wzConfig['GeneralInfo']['EndingMilePost']
+        eventStatus = wzConfig['GeneralInfo']['EventStatus']
+        creationDate = wzConfig['GeneralInfo'].get('CreationDate', '')
+        updateDate = wzConfig['GeneralInfo'].get(
+            'UpdateDate', datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"))
 
-    # total number of lanes in wz
-    totalLanes = int(wzConfig['LaneInfo']['NumberOfLanes'])
-    # average lane width in meters
-    laneWidth = float(wzConfig['LaneInfo']['AverageLaneWidth'])
-    # approach lane padding in meters
-    lanePadApp = float(wzConfig['LaneInfo']['ApproachLanePadding'])
-    # WZ lane padding in meters
-    lanePadWZ = float(wzConfig['LaneInfo']['WorkzoneLanePadding'])
-    # lane used for collecting veh path data
-    dataLane = int(wzConfig['LaneInfo']['VehiclePathDataLane'])
-    lanes_obj = list(wzConfig['LaneInfo']['Lanes'])
+        typeOfWork = wzConfig['TypesOfWork']
+        if not typeOfWork:
+            typeOfWork = []
 
-    speedList = wzConfig['SpeedLimits']['NormalSpeed'], wzConfig['SpeedLimits']['ReferencePointSpeed'], \
-        wzConfig['SpeedLimits']['WorkersPresentSpeed']
+        # total number of lanes in wz
+        totalLanes = int(wzConfig['LaneInfo']['NumberOfLanes'])
+        # average lane width in meters
+        laneWidth = float(wzConfig['LaneInfo']['AverageLaneWidth'])
+        # approach lane padding in meters
+        lanePadApp = float(wzConfig['LaneInfo']['ApproachLanePadding'])
+        # WZ lane padding in meters
+        lanePadWZ = float(wzConfig['LaneInfo']['WorkzoneLanePadding'])
+        # lane used for collecting veh path data
+        dataLane = int(wzConfig['LaneInfo']['VehiclePathDataLane'])
+        lanes_obj = list(wzConfig['LaneInfo']['Lanes'])
 
-    c_sc_codes = [int(wzConfig['CauseCodes']['CauseCode']),
-                  int(wzConfig['CauseCodes']['SubCauseCode'])]
+        speedList = wzConfig['SpeedLimits']['NormalSpeed'], wzConfig['SpeedLimits']['ReferencePointSpeed'], \
+            wzConfig['SpeedLimits']['WorkersPresentSpeed']
 
-    startDateTime = wzConfig['Schedule']['StartDate']
-    wzStartDate = datetime.datetime.strptime(
-        startDateTime, "%Y-%m-%dT%H:%M:%SZ").strftime("%m/%d/%Y")
-    wzStartTime = datetime.datetime.strptime(
-        startDateTime, "%Y-%m-%dT%H:%M:%SZ").strftime("%H:%M")
-    startDateAccuracy = wzConfig['Schedule'].get(
-        'StartDateAccuracy', 'estimated')
-    endDateTime = wzConfig['Schedule']['EndDate']
-    wzEndDate = datetime.datetime.strptime(
-        endDateTime, "%Y-%m-%dT%H:%M:%SZ").strftime("%m/%d/%Y")
-    wzEndTime = datetime.datetime.strptime(
-        endDateTime, "%Y-%m-%dT%H:%M:%SZ").strftime("%H:%M")
-    endDateAccuracy = wzConfig['Schedule'].get('EndDateAccuracy', 'estimated')
-    wzDaysOfWeek = wzConfig['Schedule']['DaysOfWeek']
+        c_sc_codes = [int(wzConfig['CauseCodes']['CauseCode']),
+                      int(wzConfig['CauseCodes']['SubCauseCode'])]
 
-    wzStartLat = wzConfig['Location']['BeginningLocation']['Lat']
-    wzStartLon = wzConfig['Location']['BeginningLocation']['Lon']
-    beginningAccuracy = wzConfig['Location']['BeginningAccuracy']
-    wzEndLat = wzConfig['Location']['EndingLocation']['Lat']
-    wzEndLon = wzConfig['Location']['EndingLocation']['Lon']
-    endingAccuracy = wzConfig['Location']['EndingAccuracy']
+        startDateTime = wzConfig['Schedule']['StartDate']
+        wzStartDate = datetime.datetime.strptime(
+            startDateTime, "%Y-%m-%dT%H:%M:%SZ").strftime("%m/%d/%Y")
+        wzStartTime = datetime.datetime.strptime(
+            startDateTime, "%Y-%m-%dT%H:%M:%SZ").strftime("%H:%M")
+        startDateAccuracy = wzConfig['Schedule'].get(
+            'StartDateAccuracy', 'estimated')
+        endDateTime = wzConfig['Schedule']['EndDate']
+        wzEndDate = datetime.datetime.strptime(
+            endDateTime, "%Y-%m-%dT%H:%M:%SZ").strftime("%m/%d/%Y")
+        wzEndTime = datetime.datetime.strptime(
+            endDateTime, "%Y-%m-%dT%H:%M:%SZ").strftime("%H:%M")
+        endDateAccuracy = wzConfig['Schedule'].get(
+            'EndDateAccuracy', 'estimated')
+        wzDaysOfWeek = wzConfig['Schedule']['DaysOfWeek']
 
-    wzLocationMethod = wzConfig['metadata']['wz_location_method']
-    lrsType = wzConfig['metadata']['lrs_type']
-    locationVerifyMethod = wzConfig['metadata']['location_verify_method']
-    dataFeedFrequencyUpdate = wzConfig['metadata']['datafeed_frequency_update']
-    timestampMetadataUpdate = wzConfig['metadata']['timestamp_metadata_update']
-    contactName = wzConfig['metadata']['contact_name']
-    contactEmail = wzConfig['metadata']['contact_email']
-    issuingOrganization = wzConfig['metadata']['issuing_organization']
+        wzStartLat = wzConfig['Location']['BeginningLocation']['Lat']
+        wzStartLon = wzConfig['Location']['BeginningLocation']['Lon']
+        beginningAccuracy = wzConfig['Location']['BeginningAccuracy']
+        wzEndLat = wzConfig['Location']['EndingLocation']['Lat']
+        wzEndLon = wzConfig['Location']['EndingLocation']['Lon']
+        endingAccuracy = wzConfig['Location']['EndingAccuracy']
+
+        wzLocationMethod = wzConfig['metadata']['wz_location_method']
+        lrsType = wzConfig['metadata']['lrs_type']
+        locationVerifyMethod = wzConfig['metadata']['location_verify_method']
+        dataFeedFrequencyUpdate = wzConfig['metadata']['datafeed_frequency_update']
+        timestampMetadataUpdate = wzConfig['metadata']['timestamp_metadata_update']
+        contactName = wzConfig['metadata']['contact_name']
+        contactEmail = wzConfig['metadata']['contact_email']
+        issuingOrganization = wzConfig['metadata']['issuing_organization']
+    except KeyError as e:
+        logging.error("Invalid Configuration File. Missing field " + str(e))
+        raise RuntimeError(
+            "Invalid Configuration File. Missing field " + str(e)) from e
 
     try:
         mapImageZoom = wzConfig.get('ImageInfo', {}).get('Zoom', 0)
@@ -314,52 +311,192 @@ def getConfigVars():
     except KeyError:
         pass
 
-###
-#   ------------------------- End of getConfigVars -----------------------
-#
-#
-# --------------------------- Build .js File -----------------------------------
-#
-#   Open js file for writing js arrays for map data points, approach lanes points, wz lanes points and ref. point
-#
-#   js_outFile  - data and array for JavaScript for visualization.
-#                 fixed file name in the visualization directory
-###
+
+def getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, currIndex):
+    print(currIndex)
+    laneIndex = numLanes - 1
+    approachDistance = APPROADH_REGION_TIME * (speedLimits[0] * MPS_PER_MPH)
+    currDistance = wzMapPt[currIndex][(numLanes - 1)*5 + 7]
+    startDistance = currDistance - approachDistance
+    logging.info(str(startDistance) + ', ' +
+                 str(currDistance) + ', ' + str(approachDistance))
+    if startDistance < 0 and currIndex < 63:
+        # Need to use approach region points
+        appTotalDistance = appMapPt[-1][(numLanes - 1)*5 + 7]
+        currAppDistance = appTotalDistance + startDistance  # startDistance is negative
+
+        maxApproachNumNodes = currIndex - MAX_NUM_NODES
+        startIndex = max(findNodeByDistance(appMapPt, numLanes,
+                         currAppDistance), len(appMapPt) + maxApproachNumNodes)
+
+        geometry = getMapPointsBetweenIndexes(
+            appMapPt, numLanes, startIndex, -1, [])
+        geometry = getMapPointsBetweenIndexes(
+            wzMapPt, numLanes, 0, currIndex, geometry)
+
+        return geometry
+    else:
+        startIndex = max(findNodeByDistance(wzMapPt, numLanes,
+                         startDistance), currIndex - MAX_NUM_NODES)
+        print(startIndex)
+        geometry = getMapPointsBetweenIndexes(
+            wzMapPt, numLanes, startIndex, currIndex, [])
+
+        return geometry
+
+
+def findNodeByDistance(arr, numLanes, targetDistance):
+    for index, node in enumerate(arr):
+        distance = node[(numLanes - 1)*5 + 7]
+        if distance > targetDistance:
+            return max(index - 1, 0)
+
+
+def getMapPointsBetweenIndexes(arr, numLanes, startIndex, endIndex, points):
+    points = []
+    for lane in range(numLanes):
+        lane_points = []
+        for node in arr[startIndex:endIndex]:
+            lane_points.append(
+                [node[lane*5 + 0], node[lane*5 + 1], node[lane*5 + 2]])
+        points.append(lane_points)
+    return points
+
+
+def segmentToContainers(appMapPt, wzMapPt, numLanes, speedLimits):
+    reducedSpeedZones = []
+    workersPresentZones = []
+    laneClosureZones = []
+
+    reducedSpeedLimitActive = False
+    lanesClosureActive = False
+    workersPresentActive = False
+
+    allOpenLaneStat = [False] * numLanes
+    prevLaneStat = [False] * numLanes
+
+    prevWpStat = False
+
+    defaultSpeedLimit = speedLimits[0]
+    prevSpeedLimit = speedLimits[0]
+
+    initialGeometry = []
+    for i in range(numLanes):
+        initialGeometry.append(copy.deepcopy([]))
+
+    for index, node in enumerate(wzMapPt):
+        # 0: latitude
+        # 1: longitude
+        # 2: altitude
+        # 3: lane closure stat
+        # 4: lane taper stat
+        # repeated for n lanes...
+
+        # 5: bearing
+        # 6: wp stat
+        # 7: distance
+        # 8: speed limit
+
+        lane = 0
+
+        latitude = node[lane*5 + 0]
+        longitude = node[lane*5 + 1]
+        altitude = node[lane*5 + 2]
+        laneStat = []
+        for i in range(numLanes):
+            laneStat.append(node[i*5 + 3] == 1)
+        # laneTaperStat   = node[lane*5 + 4]
+        bearing = node[(numLanes-1)*5 + 5]
+        wpStat = node[(numLanes-1)*5 + 6] == 1
+        distance = node[(numLanes-1)*5 + 7]
+        speedLimit = node[(numLanes-1)*5 + 8]
+
+        if wpStat != prevWpStat:
+            logging.debug("wpStat change: " +
+                          str(wpStat) + ", at " + str(index))
+            prevWpStat = wpStat
+            if wpStat == False:
+                workersPresentActive = False
+            else:
+                workersPresentActive = True
+
+        if speedLimit != prevSpeedLimit or (reducedSpeedZones and len(reducedSpeedZones[-1]['geometry']) >= MAX_NUM_NODES - 1):
+            logging.debug("speed limit change or reset: " +
+                          str(speedLimit) + ", at node number " + str(index))
+
+            if reducedSpeedZones:
+                for i in range(numLanes):
+                    nodeGeometry = [node[i*5 + 0],
+                                    node[i*5 + 1], node[i*5 + 2]]
+                    reducedSpeedZones[-1]['geometry'][i].append(nodeGeometry)
+
+            prevSpeedLimit = speedLimit
+            if speedLimit == defaultSpeedLimit:
+                reducedSpeedLimitActive = False
+            else:
+                reducedSpeedLimitActive = True
+                reducedSpeedZones.append({
+                    'speedLimit': speedLimits[0],
+                    'geometry': copy.deepcopy(initialGeometry),
+                    'approachGeometry': getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, index),
+                    'workersPresent': workersPresentActive})
+
+        logging.info("laneStat: " +
+                     str(laneStat) + ", at node number " + str(index))
+
+        if laneStat != prevLaneStat or (laneClosureZones and len(laneClosureZones[-1]['geometry']) >= MAX_NUM_NODES - 1):
+            logging.info("laneStat change or reset: " +
+                         str(laneStat) + ", at node number " + str(index))
+
+            if laneClosureZones:
+                for i in range(numLanes):
+                    nodeGeometry = [node[i*5 + 0],
+                                    node[i*5 + 1], node[i*5 + 2]]
+                    laneClosureZones[-1]['geometry'][i].append(nodeGeometry)
+
+            prevLaneStat = laneStat
+            if laneStat == allOpenLaneStat:
+                lanesClosureActive = False
+            else:
+                lanesClosureActive = True
+                laneClosureZones.append({
+                    'laneStat': laneStat,
+                    'geometry': copy.deepcopy(initialGeometry),
+                    'approachGeometry': getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, index),
+                    'workersPresent': workersPresentActive})
+
+        if reducedSpeedLimitActive:
+            if workersPresentActive and not reducedSpeedZones[-1]['workersPresent']:
+                reducedSpeedZones[-1]['workersPresent'] = True
+            for i in range(numLanes):
+                nodeGeometry = [node[i*5 + 0], node[i*5 + 1], node[i*5 + 2]]
+                reducedSpeedZones[-1]['geometry'][i].append(nodeGeometry)
+
+        if lanesClosureActive:
+            if workersPresentActive and not reducedSpeedZones[-1]['workersPresent']:
+                reducedSpeedZones[-1]['workersPresent'] = True
+            for i in range(numLanes):
+                nodeGeometry = [node[i*5 + 0], node[i*5 + 1], node[i*5 + 2]]
+                laneClosureZones[-1]['geometry'][i].append(nodeGeometry)
+
+    return (reducedSpeedZones, workersPresentZones, laneClosureZones)
+
+
+def getReferencePoint(node):
+    p1 = node[0]
+    p2 = node[-1]
+    return [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, (p1[2] + p2[2]) / 2]
+
+
+def getIds(Ids, index):
+    if index > 4:
+        return {'operatorId': OPERATOR_ID, 'uniqueId': str(uuid.uuid4())}
+    else:
+        return Ids[index]
 
 
 def build_messages():
     global files_list
-
-###
-#   Data elements for 'common' container...
-###
-
-    msgID = 33  # RSM message ID is assigned as 33
-
-###
-#   Generate rendom eventID between 0 and 32767
-###
-
-    # randomly generated between 0 and 32767 in hex
-    eventID = '0000000'+str(hex(random.randint(0, 32767))).replace('0x', '')
-    # hex string of 4 octetes padded with 0 in the front
-    eventID = eventID[len(eventID)-8:len(eventID)]
-
-###
-#   idList - message ID and Event Id
-###
-
-    idList = [msgID, eventID]  # msgID and eventID only. No stationId
-
-
-###
-#   Set
-#       WZ start date and time and end date and time in yyyy,mm,dd,hh,mm
-#       UTC time offset
-#       headway tolerance
-#       road width - NOT used any more...
-#       event length same as workzone length
-###
 
     wzStart = wzStartDate.split('/') + wzStartTime.split(':')
     wzEnd = wzEndDate.split('/') + wzEndTime.split(':')
@@ -371,13 +508,8 @@ def build_messages():
     roadWidth = totalLanes*laneWidth*100  # roadWidth in cm
     eventLength = wzLen  # WZ length in meters, computed earlier
 
-
-###
-#   Set speed limits in WZ as vehicle max speed..from user input saved in config file...
-###
-
     speedLimit = ['vehicleMaxSpeed', speedList[0], speedList[1],
-                  speedList[2], 'mph']  # NEW Version of XER... Nov. 2017
+                  speedList[2]]
 
 # -------------------------------------------------
 #
@@ -394,134 +526,170 @@ def build_messages():
 #
 ####
 
-    currSeg = 1  # current message segment
-    totSeg = msgSegList[0][0]  # total message segments
     rsmSegments = []
 
     wzdx_outFile = tempfile.gettempdir() + '/WZDx_File-' + ctrDT + '.geojson'
-    logMsg('WZDx output file path: ' + wzdx_outFile)
+    logging.debug('WZDx output file path: ' + wzdx_outFile)
     wzdxFile = open(wzdx_outFile, 'w')
     files_list.append(wzdx_outFile)
 
     devnull = open(os.devnull, 'w')
 
-    while currSeg <= totSeg:  # repeat for all segments
-        logMsg("Segment Number: " + str(currSeg))
-        logMsg("Segment Range: " +
-               str(msgSegList[currSeg+1][1] - 1) + " - " + str(msgSegList[currSeg+1][2]))
-        logMsg("AppMapPt Length: " + str(len(appMapPt)))
-
+    reducedSpeedZones, workersPresentZones, laneClosureZones = segmentToContainers(
+        appMapPt, wzMapPt, laneStat[0][0], speedLimit[1:])
 
 ###
 # Create and open output xml file...
 ###
-        if noRSM:
-            logMsg('Accuracy too low, not adding RSM files to files_list ')
-        else:
-            xml_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + \
-                str(currSeg)+'_of_'+str(totSeg)+'.xml'
-            logMsg('RSM XML output file path: ' + xml_outFile)
+    if noRSM:
+        logging.warning('Accuracy too low, not adding RSM files to files_list')
 
-            uper_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + \
-                str(currSeg)+'_of_'+str(totSeg)+'.uper'
-            logMsg('RSM UPER output file path: ' + uper_outFile)
-
-            xmlFile = open(xml_outFile, 'w')
-
-            files_list.append(xml_outFile)
-            files_list.append(uper_outFile)
-
-###
-#   Build common container...
-#
-#   Update refPoint to a new value for different message segment > 1.
-#   Since the distance between the original reference point and the first node for message segment 2 to the last segment could be
-#   too far apart (xyz_offset) to be represented in just one offset node. To alleviate the issue, for every segment, a new reference
-#   point is set as follows:
-#
-#   1st segment   - Original marked reference point
-#   2..n segments - Use first set of node points and select for the open lane for which vehicle path data is collected.
-#                   The first set of node points are the same as the last set of node points of of the previous segment.
-#                   They are repeated for map matching purpose
-###
-
-        startNode = 1
-        if currSeg == startNode:
-            newRefPt = refPoint
-        else:
-            dL = (dataLane - 1) * 4  # location pinter in wzMapPt list
-            # wz start node, index in wzMapPt is startNode-1
-            startNode = msgSegList[currSeg+1][1]
-            newRefPt = (wzMapPt[startNode-1][dL+0],
-                        wzMapPt[startNode-1][dL+1], wzMapPt[startNode-1][dL+2])
-        pass
-
+    heading = {'heading': appHeading, 'tolerance': hTolerance}
 
 ###
 #   Build xml for common container...
 ###
-        commonContainer = wz_xml_builder.build_xml_CC(idList, wzStart, wzEnd, timeOffset, wzDaysOfWeek, c_sc_codes, newRefPt, appHeading, hTolerance,
-                                                      speedLimit, laneWidth, roadWidth, eventLength, laneStat, appMapPt, msgSegList, currSeg, wzDesc)
+
+    # commonContainer = wz_xml_builder.build_xml_CC(idList, wzStart, wzEnd, timeOffset, wzDaysOfWeek, c_sc_codes, newRefPt, appHeading, hTolerance,
+    #                                                   speedLimit, laneWidth, roadWidth, eventLength, laneStat, appMapPt, msgSegList, currSeg, wzDesc)
 
 ###
 #       WZ length, LC characteristic, workers present, etc.
 ###
 
-        # Workers present flag, 0=no, 1=yes   NOT Used in RSM (was for BIM)
-        wpFlag = 0
-        RN = False  # Boolean - True: Generate reduced nodes for closed lanes
-        #        - False: Generate all nodes for closed lanes
+    # Workers present flag, 0=no, 1=yes   NOT Used in RSM (was for BIM)
+    # wpFlag = 0
+    # RN = False  # Boolean - True: Generate reduced nodes for closed lanes
+    #        - False: Generate all nodes for closed lanes
 ###
-#   Build WZ container
+#   Build WZ containers
 ###
-        rszContainer = wz_xml_builder.build_xml_WZC(
-            speedLimit, laneWidth, laneStat, wpStat, wzMapPt, RN, msgSegList, currSeg)
+
+    eventIdList = []
+
+    numRsms = 0
+
+    initialGeometry = []
+    for i in range(len(reducedSpeedZones[0]['geometry'])):
+        initialGeometry.append([])
+
+    for rsz in reducedSpeedZones:
+        numRsms += 1
+
+    for i in range(min(numRsms, 4)):
+        eventIdList.append(
+            {'operatorId': OPERATOR_ID, 'uniqueId': str(uuid.uuid4())})
+
+    idIndex = 0
+
+    # reducedSpeedZones, workersPresentZones, laneClosureZones
+    for rsz in reducedSpeedZones:
+        eventId = getIds(eventIdList, idIndex)
 
         rsm = {}
-        rsm['MessageFrame'] = {}
-        rsm['MessageFrame']['messageId'] = idList[0]
-        rsm['MessageFrame']['value'] = {}
-        rsm['MessageFrame']['value']['RoadsideSafetyMessage'] = {}
-        rsm['MessageFrame']['value']['RoadsideSafetyMessage']['version'] = 1
-        rsm['MessageFrame']['value']['RoadsideSafetyMessage']['commonContainer'] = commonContainer
-        rsm['MessageFrame']['value']['RoadsideSafetyMessage']['rszContainer'] = rszContainer
+        rsm['RoadsideSafetyMessage'] = {}
+        commonContainer = wz_xml_builder.buildCommonContainer(eventId, wzStart, wzEnd, timeOffset, wzDaysOfWeek, c_sc_codes, getReferencePoint(rsz['geometry'][0]),
+                                                              heading, laneWidth, roadWidth, laneStat[0][0], rsz['approachGeometry'], wzDesc, eventIdList)
+        rsm['RoadsideSafetyMessage']['commonContainer'] = commonContainer
+
+        speedLimit = {
+            'type': 'vehicleMaxSpeed',
+            'value': rsz['speedLimit']
+        }
+        rszContainer = wz_xml_builder.buildRszContainer(
+            speedLimit, rsz['geometry'], laneWidth)
+        rsm['RoadsideSafetyMessage']['rszContainer'] = rszContainer
+
+        for laneClosure in laneClosureZones:
+            geometry = copy.deepcopy(initialGeometry)
+            for index, node in enumerate(laneClosure['geometry'][0]):
+                if node in rsz['geometry'][0]:
+                    for lane, obj in enumerate(laneClosure['geometry']):
+                        geometry[lane].append(obj[index])
+            if geometry != initialGeometry:
+                laneClosureContainer = wz_xml_builder.buildLaneClosureContainer(
+                    laneClosure['laneStat'], None, geometry, laneWidth)
+                rsm['RoadsideSafetyMessage']['laneClosureContainer'] = laneClosureContainer
+
+        if rsz['workersPresent']:
+            situationalContainer = wz_xml_builder.buildSituationalContainer(
+                None, None, True, None)
+            rsm['RoadsideSafetyMessage']['situationalContainer'] = situationalContainer
 
         rsmSegments.append(rsm)
-        if not noRSM:
-            rsm_xml = xmltodict.unparse(
-                rsm, short_empty_elements=True, pretty=True, indent='  ')
-            xmlFile.write(rsm_xml)
+        idIndex += 1
 
-            xmlFile.close()
+    # for laneClosure in laneClosureZones:
+    #     eventId = getIds(eventIdList, idIndex)
 
-            linux = subprocess.check_output(
-                ['uname', '-a'], stderr=subprocess.STDOUT).decode('utf-8')
-            logMsg("Linux Installation Information: " + str(linux))
-            try:
-                p = subprocess.Popen(['./EventGridTrigger1/jvm/bin/java', '-jar', './EventGridTrigger1/CVMsgBuilder_xmltouper_v8.jar', str(
-                    xml_outFile), str(uper_outFile)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                output, err = p.communicate(
-                    b"input data that is passed to subprocess' stdin")
-                # rc = p.returncode
-                logging.error(
-                    'ERROR: RSM UPER conversion FAILED. Output: ' + str(output))
-                logging.error(
-                    'ERROR: RSM UPER conversion FAILED. Error: ' + str(err))
-            except Exception as e:
-                logging.error(
-                    'ERROR: RSM UPER conversion FAILED. Message: ' + str(e))
-            # subprocess.call(['./EventGridTrigger1/jvm/bin/java', '-jar', './EventGridTrigger1/CVMsgBuilder_xmltouper_v8.jar', str(xml_outFile), str(uper_outFile)]) #,stdout=devnull
+    #     rsm = {}
+    #     rsm['RoadsideSafetyMessage'] = {}
+    #     commonContainer = wz_xml_builder.buildCommonContainer(eventId, wzStart, wzEnd, timeOffset, wzDaysOfWeek, c_sc_codes, getReferencePoint(laneClosure['geometry'][0]),
+    #         heading, laneWidth, roadWidth, laneStat[0][0], laneClosure['approachGeometry'], wzDesc, eventIdList)
+    #     rsm['RoadsideSafetyMessage']['commonContainer'] = commonContainer
 
-            if not os.path.exists(uper_outFile) or os.stat(uper_outFile).st_size == 0:
-                logging.error('ERROR: UPER FILE DOES NOT EXIST OR HAS SIZE 0')
-                logging.error('ERROR: RSM UPER conversion FAILED')
+    #     laneClosureContainer = wz_xml_builder.buildLaneClosureContainer(laneClosure['laneStat'], None, laneClosure['geometry'], laneWidth)
+    #     rsm['RoadsideSafetyMessage']['laneClosureContainer'] = laneClosureContainer
 
-        currSeg = currSeg+1
-    pass
+    #     if laneClosure['workersPresent']:
+    #         situationalContainer = wz_xml_builder.buildSituationalContainer(None, None, True, None)
+    #         rsm['RoadsideSafetyMessage']['situationalContainer'] = situationalContainer
+
+    #     if len(eventIdList) < 4:
+    #         eventIdList.append(eventId)
+
+    #     rsmSegments.append(rsm)
+    #     idIndex += 1
+
+    if not noRSM:
+        numSegments = len(rsmSegments)
+        for index, rsm in enumerate(rsmSegments):
+            xml_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + \
+                str(index + 1)+'_of_'+str(numSegments)+'.xml'
+            logging.debug('RSM XML output file path: ' + xml_outFile)
+
+            uper_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + \
+                str(index + 1)+'_of_'+str(numSegments)+'.uper'
+            logging.debug('RSM UPER output file path: ' + uper_outFile)
+
+            files_list.append(xml_outFile)
+            # files_list.append(uper_outFile)
+
+            with open(xml_outFile, 'w') as xmlFile:
+                rsm_xml = xmltodict.unparse(
+                    rsm, short_empty_elements=True, pretty=True, indent='  ')
+                xmlFile.write(rsm_xml)
+
+                xmlFile.close()
+
+        # linux = subprocess.check_output(
+        #     ['uname', '-a'], stderr=subprocess.STDOUT).decode('utf-8')
+        # logging.debug("Linux Installation Information: " + str(linux))
+        # try:
+        #     p = subprocess.Popen(['./EventGridTrigger1/jvm/bin/java', '-jar', './EventGridTrigger1/CVMsgBuilder_xmltouper_v8.jar', str(
+        #         xml_outFile), str(uper_outFile)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        #     output, err = p.communicate(
+        #         b"input data that is passed to subprocess' stdin")
+        #     # rc = p.returncode
+        #     logging.error(
+        #         'ERROR: RSM UPER conversion FAILED. Output: ' + str(output))
+        #     logging.error(
+        #         'ERROR: RSM UPER conversion FAILED. Error: ' + str(err))
+        # except Exception as e:
+        #     logging.error(
+        #         'ERROR: RSM UPER conversion FAILED. Message: ' + str(e))
+        # # subprocess.call(['./EventGridTrigger1/jvm/bin/java', '-jar', './EventGridTrigger1/CVMsgBuilder_xmltouper_v8.jar', str(xml_outFile), str(uper_outFile)]) #,stdout=devnull
+
+        # if not os.path.exists(uper_outFile) or os.stat(uper_outFile).st_size == 0:
+        #     logging.error('ERROR: UPER FILE DOES NOT EXIST OR HAS SIZE 0')
+        #     logging.error('ERROR: RSM UPER conversion FAILED')
+
+    # currSeg = currSeg+1
+    # pass
     info = {}
     info['feed_info_id'] = feed_info_id
+    info['license'] = "https://creativecommons.org/publicdomain/zero/1.0/"
     info['road_name'] = roadName
-    info['road_number'] = roadNumber
     info['description'] = wzDesc
     info['direction'] = direction
     info['beginning_cross_street'] = beginningCrossStreet
@@ -550,24 +718,18 @@ def build_messages():
 
     info['types_of_work'] = typeOfWork
     info['lanes_obj'] = lanes_obj
-    # logMsg('Converting RSM XMl to WZDx message')
+    logging.info('Converting RSM XMl to WZDx message')
     wzdx = {}
     try:
-        wzdx = rsm_2_wzdx_translator.wzdx_creator(rsmSegments, dataLane, info)
-        logMsg("WZDx message generated and validated successfully")
+        wzdx = rsm_2_wzdx_translator.wzdx_creator(
+            rsmSegments, int(dataLane), info)
+        logging.info("WZDx message generated and validated successfully")
     except Exception as e:
-        logMsg("ERROR: WZDx Message Generation Failed: " + str(e))
-        uploadLogFile()
+        logging.error("WZDx Message Generation Failed: " + str(e))
         raise e
     wzdxFile.write(json.dumps(wzdx, indent=2))
     wzdxFile.close()
 
-###
-#   May want to print WZ length per segment and total WZ length...
-###
-
-    # logMsg('--- Done Building WZ MAP ---')
-    # logFile.close()
 
 ###
 #   > > > > > > > > > > > START MAIN PROCESS < < < < < < < < < < < < < < <
@@ -592,14 +754,12 @@ def startMainProcess(vehPathDataFile):
 
     timeRegex = '[0-9]{2}(:[0-9]{2}){3}'
     lastIndex = len(csvList) - 1
-    logMsg('Length of CSV data: ' + str(lastIndex))
+    logging.debug('Length of CSV data: ' + str(lastIndex))
     time1 = re.search(timeRegex, str(csvList[1])).group(0).split(':')
     time2 = re.search(timeRegex, str(csvList[lastIndex])).group(0).split(':')
 
     deltaTime = (int(time2[0])-int(time1[0]))*3600 + (int(time2[1])-int(time1[1])) * \
         60 + (int(time2[2])-int(time1[2])) + (int(time2[3])-int(time1[3]))/100
-    # diffmSec = (int(time2[9:11]) - int(time1[9:11])) / 100
-    # diffSec = int(time2[6:8]) - int(time1[6:8])
     if (deltaTime) != 0:
         sampleFreq = lastIndex/deltaTime
     else:
@@ -607,12 +767,9 @@ def startMainProcess(vehPathDataFile):
     if sampleFreq < 1 or sampleFreq > 10:
         sampleFreq = 10
 
-    logMsg('Sample Frequency: ' + str(sampleFreq))
+    logging.debug('Sample Frequency: ' + str(sampleFreq))
 
     totRows = len(csvList) - 1  # total records or lines in file
-
-    # logMsg('*** - '+wzDesc+' - ***')
-    # logMsg('--- Processing Input File: '+vehPathDataFile+', Total input lines: '+str(totRows))
 
 ###
 #
@@ -624,29 +781,27 @@ def startMainProcess(vehPathDataFile):
 #   Updated on Aug. 23, 2018
 #
 ###
-    logMsg('Length of Path Point Before: ' + str(len(pathPt)))
+    logging.debug('Length of Path Point Before: ' + str(len(pathPt)))
 
     # temporary list to hold return values from function below
     atRefPoint = [0, 0, 0, 0]
     wz_vehpath_lanestat_builder.buildVehPathData_LaneStat(
         vehPathDataFile, totalLanes, pathPt, laneStat, wpStat, refPoint, atRefPoint, sampleFreq)
-    logMsg('Length of Path Points After: ' + str(len(pathPt)))
+    logging.debug('Length of Path Points After: ' + str(len(pathPt)))
     refPtIdx = atRefPoint[0]
     wzLen = atRefPoint[1]
     appHeading = atRefPoint[2]
     maxHDOP = atRefPoint[3]
     maxAllowableHDOP = 2        # meters
     if maxHDOP > maxAllowableHDOP:
-        logMsg('GPS Accuracy too low, max value of HDOP: ' + str(maxHDOP) +
-               ' is greater than the limit of ' + str(maxAllowableHDOP) + '. Cannot upload RSM messages')
+        logging.info('GPS Accuracy too low, max value of HDOP: ' + str(maxHDOP) +
+                     ' is greater than the limit of ' + str(maxAllowableHDOP) + '. Cannot upload RSM messages')
         noRSM = True
     else:
         noRSM = False
-        logMsg('GPS Accuracy high enough, max value of HDOP: ' + str(maxHDOP) +
-               ' is greater than the limit of ' + str(maxAllowableHDOP) + '. RSM messages will be uploaded')
-
-    # logMsg(' --- Start of Work Zone at Data Point: '+str(refPtIdx))
-    # logMsg('Reference Point @ '+refPoint[0]+', '+refPoint[1]+', '+refPoint[2])
+        logging.info('GPS Accuracy high enough, max value of HDOP: ' + str(maxHDOP) +
+                     ' is greater than the limit of ' + str(maxAllowableHDOP) + '. RSM messages will be uploaded')
+    noRSM = False
 
 
 ###
@@ -686,16 +841,14 @@ def startMainProcess(vehPathDataFile):
 
     wzMapLen = [0, 0]  # both approach and wz mapped length
     laneType = 1  # approach lanes
-    logMsg(str(laneType) + ', ' + str(len(pathPt)) + ', ' + str(len(appMapPt)) + ', ' +
-           str(laneWidth) + ', ' + str(lanePadApp) + ', ' + str(refPtIdx) + ', ' + str(appMapPtDist))
-    logMsg(str(laneStat) + ',' + str(wpStat) + ', ' + str(dataLane) +
-           ', ' + str(wzMapLen) + ', ' + str(speedList) + ', ' + str(sampleFreq))
+    logging.debug(str(laneType) + ', ' + str(len(pathPt)) + ', ' + str(len(appMapPt)) + ', ' +
+                  str(laneWidth) + ', ' + str(lanePadApp) + ', ' + str(refPtIdx) + ', ' + str(appMapPtDist))
+    logging.debug(str(laneStat) + ',' + str(wpStat) + ', ' + str(dataLane) +
+                  ', ' + str(wzMapLen) + ', ' + str(speedList) + ', ' + str(sampleFreq))
     wz_map_constructor.getLanePt(laneType, pathPt, appMapPt, laneWidth, lanePadApp,
                                  refPtIdx, appMapPtDist, laneStat, wpStat, dataLane, wzMapLen, speedList, sampleFreq)
-    logMsg('Length of Approach Points: ' + str(len(appMapPt)))
-    logMsg('Length of Path Point: ' + str(len(pathPt)))
-
-    # logMsg(' --- Mapped Approach Lanes: '+str(int(wzMapLen[0]))+' meters')
+    logging.debug('Length of Approach Points: ' + str(len(appMapPt)))
+    logging.debug('Length of Path Point: ' + str(len(pathPt)))
 
 
 ###
@@ -707,13 +860,17 @@ def startMainProcess(vehPathDataFile):
 
     laneType = 2  # wz lanes
 
-    logMsg('Length of Work Zone Points Before: ' + str(len(wzMapPt)))
+    logging.debug('Length of Work Zone Points Before: ' + str(len(wzMapPt)))
+
+    print(laneStat)
+    print(pathPt)
+    print(dataLane)
+
+    # Append all nodes to wzMapPt
     wz_map_constructor.getLanePt(laneType, pathPt, wzMapPt, laneWidth, lanePadWZ, refPtIdx,
                                  wzMapPtDist, laneStat, wpStat, dataLane, wzMapLen, speedList, sampleFreq)
-    logMsg('Length of Work Zone Points After: ' + str(len(wzMapPt)))
-    logMsg('Length of Path Point: ' + str(len(pathPt)))
-
-    # logMsg(' --- Mapped Work zone Lanes: '+str(int(wzMapLen[1]))+' meters')
+    logging.debug('Length of Work Zone Points After: ' + str(len(wzMapPt)))
+    logging.debug('Length of Path Point: ' + str(len(pathPt)))
 
 
 ###
@@ -722,81 +879,21 @@ def startMainProcess(vehPathDataFile):
 
     laneStatIdx = len(laneStat)
     if laneStatIdx > 1:  # have lane closures...NOTE: Index 0 location is dummy value...
-        # logMsg(' --- Start/End of lane closure Offset from the reference point ---')
         for L in range(1, laneStatIdx):
             stat = 'Start'
             if laneStat[L][2] == 0:
                 stat = 'End'
-            # logMsg('\t '+stat+' of lane '+str(laneStat[L][1])+' closure, at data point: '+str(laneStat[L][0])+', Offset: '+ \
-            #                str(int(laneStat[L][3]))+' meters')
         pass
     pass
 
-###
-#       Do for workers present/not present zone?
-###
     wpStatIdx = len(wpStat)
     if wpStatIdx > 0:  # have workers present/not present
-        # logMsg(' --- Start/End of workers present offset from the reference point ---')
         for w in range(0, wpStatIdx):
             stat = 'End'
             if wpStat[w][1] == 1:
                 stat = 'Start'
-            # logMsg('\t '+stat+' of workers present @ data point: '+str(wpStat[w][0])+  \
-            #                ', Offset: '+str(wpStat[w][2])+' meters')
         pass
     pass
-
-###
-#   Get nodes list for each segmented message in message segmentation...
-#
-#   Following revised to address error in generating message segmentation
-#       Revised - Jan. 22, 2019
-#
-#       If computed nodes per approach lane is > computed nodes per lane (Approach nodes/lane + min. 2 nodes for WZ lane in 1st segment)
-#       msgSegList[0][0] is set to -1 indicating error in generating segmentation.
-#
-###
-
-    msgSegList = wz_msg_segmentation.buildMsgSegNodeList(
-        len(appMapPt), len(wzMapPt), totalLanes)  # build message segment list
-
-    if msgSegList[0][0] == -1:  # Error
-        ANPL = msgSegList[1][2]
-        MNPL = msgSegList[0][1]
-        logMsg('ERROR: MESSAGE SEGMENTATION FAILED')
-        # logMsg('\tThe 1st message segment must be able to include all nodes for approach lane plus at atleast first 2 nodes of WZ lane')
-        # logMsg('\tNodes per approach lane: '+str(ANPL)+' > allowed max nodes per lane: ' +str(MNPL)+' to stay within message payload size\n\t')
-        # logMsg('\tThe 1st message segment must be able to include all nodes for approach lane')
-        # logMsg('\tReduce length of vehicle path data for approach lane to no more than 1km and try again')
-        print('MESSAGE SEGMENTATION ERROR',
-              'Reduce length of vehicle path data for approach lane to no more than 1km and try again')
-        # TODO: Fix this error/make this never happen. throw away some data from start of approach region?
-        # logFile.close()
-        sys.exit(0)
-        # logFile.close()                                                         #stopping the program, close file so eror message is saved...
-        return  # return to caller
-
-    else:
-
-        ANPL = msgSegList[1][2]  # Approach lane Nodes Per Lane
-        # Work zone lane Nodes Per Lane
-        WZNPL = msgSegList[len(msgSegList)-1][2]
-        TNPL = ANPL + WZNPL
-        MS = msgSegList[0][0]  # Constructed message segments
-        NPL = msgSegList[0][1]  # no of Nodes Per Lane
-        # logMsg('Total Nodes per Lane: ' +str(TNPL))
-        # logMsg('Total Nodes per Approach Lane: '+str(ANPL))
-        # logMsg('Total Nodes per WZ Lane: '  +str(WZNPL))
-        # logMsg('Total message segment(s): '  +str(MS))
-        # logMsg('Nodes per Message Segment: '+str(NPL))
-        # logMsg('Message segment list: '  +str(msgSegList))
-    pass
-
-###
-#   Build XML File...
-###
-    # logMsg('Building messages')
     build_messages()
 
 
@@ -815,35 +912,16 @@ def openLog():
     logFile = open(logFileName, append_write)
 
 
-def logMsg(msg):
-    formattedTime = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S') + '+00:00'
-    logFile.write('[' + formattedTime + '] ' + msg + '\n')
-
-
 def uploadArchive(zip_name, container_name):
-    # logMsg('Creating blob in azure: ' + zip_name + ', in container: ' + container_name)
+    logging.debug('Creating blob in azure: ' + zip_name +
+                  ', in container: ' + container_name)
     blob_client = blob_service_client.get_blob_client(
         container=container_name, blob=zip_name.split('/')[-1])
-    # logMsg('Uploading zip archive to blob')
+    logging.debug('Uploading zip archive to blob')
     with open(zip_name, 'rb') as data:
         blob_client.upload_blob(data, overwrite=True)
 
-    uploadLogFile()
-
-    # logMsg('Closing log file in Message Builder and Export')
-    # logFile.close()
-    print('Upload Successful', 'Data upload successful! Please navigate to\nhttp://www.neaeraconsulting.com/V2x_Verification\nto view and verify the mapped workzone.\nYou will find your data under\n' + name_id)
-
-
-def uploadLogFile():
-    logFile.close()
-    blob_client_log = blob_service_client.get_blob_client(
-        container="logs", blob=logFileName.replace(".txt", ctrDT+".txt"))
-    with open(logFileName, 'rb') as data:
-        blob_client_log.upload_blob(data, overwrite=True)
-##
-#   ---------------------------- END of Functions... -----------------------------------------
-##
+    logging.info('Data upload successful! Please navigate to\nhttp://www.neaeraconsulting.com/V2x_Verification\nto view and verify the mapped workzone.\nYou will find your data under\n' + name_id)
 
 
 logFileName = tempfile.gettempdir() + '/data_collection_log.txt'
@@ -861,77 +939,85 @@ def updateConfigImage(vehPathDataFile):
     global wzEndLat
     global wzEndLon
 
-    got_rp = False
-    with open(vehPathDataFile, 'r') as f:
-        headers = f.readline()
-        data = f.readline().rstrip('\n')
-        while data:
-            fields = data.split(',')
-            nextData = f.readline().rstrip('\n')
-            if not got_rp and (fields[8] == 'RP' or fields[8] == 'WP+RP' or fields[8] == 'LC+RP'):
-                # Starting location found
-                wzConfig['Location']['BeginningLocation']['Lat'] = float(
-                    fields[3])
-                wzStartLat = float(fields[3])
-                wzConfig['Location']['BeginningLocation']['Lon'] = float(
-                    fields[4])
-                wzStartLon = float(fields[4])
-            elif (fields[8] == 'Data Log' and fields[9] == 'False') or not nextData:
-                # Ending location found
-                wzConfig['Location']['EndingLocation']['Lat'] = float(
-                    fields[3])
-                wzEndLat = float(fields[3])
-                wzConfig['Location']['EndingLocation']['Lon'] = float(
-                    fields[4])
-                wzEndLon = float(fields[4])
+    try:
 
-            data = nextData
+        got_rp = False
+        with open(vehPathDataFile, 'r') as f:
+            headers = f.readline()
+            data = f.readline().rstrip('\n')
+            while data:
+                fields = data.split(',')
+                nextData = f.readline().rstrip('\n')
+                if not got_rp and (fields[8] == 'RP' or fields[8] == 'WP+RP' or fields[8] == 'LC+RP'):
+                    # Starting location found
+                    wzConfig['Location']['BeginningLocation']['Lat'] = float(
+                        fields[3])
+                    wzStartLat = float(fields[3])
+                    wzConfig['Location']['BeginningLocation']['Lon'] = float(
+                        fields[4])
+                    wzStartLon = float(fields[4])
+                elif (fields[8] == 'Data Log' and fields[9] == 'False') or not nextData:
+                    # Ending location found
+                    wzConfig['Location']['EndingLocation']['Lat'] = float(
+                        fields[3])
+                    wzEndLat = float(fields[3])
+                    wzConfig['Location']['EndingLocation']['Lon'] = float(
+                        fields[4])
+                    wzEndLon = float(fields[4])
 
-    centerLat = (float(wzStartLat) + float(wzEndLat))/2
-    centerLon = (float(wzStartLon) + float(wzEndLon))/2
-    center = str(centerLat) + ',' + str(centerLon)
+                data = nextData
 
-    north = max(float(wzStartLat), float(wzEndLat))
-    south = min(float(wzStartLat), float(wzEndLat))
-    east = max(float(wzStartLon), float(wzEndLon))
-    west = min(float(wzStartLon), float(wzEndLon))
-    calcZoomLevel(north, south, east, west, mapImageWidth, mapImageHeight)
+        centerLat = (float(wzStartLat) + float(wzEndLat))/2
+        centerLon = (float(wzStartLon) + float(wzEndLon))/2
+        center = str(centerLat) + ',' + str(centerLon)
 
-    marker_list = []
-    marker_list.append("markers=color:green|label:Start|" +
-                       str(wzStartLat) + "," + str(wzStartLon) + "|")
-    marker_list.append("markers=color:red|label:End|" +
-                       str(wzEndLat) + "," + str(wzEndLon) + "|")
+        north = max(float(wzStartLat), float(wzEndLat))
+        south = min(float(wzStartLat), float(wzEndLat))
+        east = max(float(wzStartLon), float(wzEndLon))
+        west = min(float(wzStartLon), float(wzEndLon))
+        calcZoomLevel(north, south, east, west, mapImageWidth, mapImageHeight)
 
-    encoded_string = ''
-    get_static_google_map(mapFileName, center=center, zoom=zoom, imgsize=(
-        mapImageWidth, mapImageHeight), imgformat="png", markers=marker_list)
-    with open(mapFileName, "rb") as image_file:
-        encoded_string = base64.b64encode(image_file.read()).decode()
-    needsImage = False
+        marker_list = []
+        marker_list.append("markers=color:green|label:Start|" +
+                           str(wzStartLat) + "," + str(wzStartLon) + "|")
+        marker_list.append("markers=color:red|label:End|" +
+                           str(wzEndLat) + "," + str(wzEndLon) + "|")
 
-    wzConfig['ImageInfo'] = {}
-    wzConfig['ImageInfo']['Zoom'] = zoom
-    wzConfig['ImageInfo']['Center']['Lat'] = centerLat
-    wzConfig['ImageInfo']['Center']['Lon'] = centerLon
+        encoded_string = ''
+        get_static_google_map(mapFileName, center=center, zoom=zoom, imgsize=(
+            mapImageWidth, mapImageHeight), imgformat="png", markers=marker_list)
+        with open(mapFileName, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode()
+        needsImage = False
 
-    markers = []
-    markers.append({'Name': 'Start', 'Color': 'Green', 'Location': {
-                   'Lat': wzStartLat, 'Lon': wzStartLon, 'Elev': None}})
-    markers.append({'Name': 'End', 'Color': 'Red', 'Location': {
-                   'Lat': wzEndLat, 'Lon': wzEndLon, 'Elev': None}})
-    wzConfig['ImageInfo']['Markers'] = markers
+        wzConfig['ImageInfo'] = {}
+        wzConfig['ImageInfo']['Zoom'] = zoom
+        wzConfig['ImageInfo']['Center']['Lat'] = centerLat
+        wzConfig['ImageInfo']['Center']['Lon'] = centerLon
 
-    wzConfig['ImageInfo']['MapType'] = mapImageMapType
-    wzConfig['ImageInfo']['Height'] = mapImageHeight
-    wzConfig['ImageInfo']['Width'] = mapImageWidth
-    wzConfig['ImageInfo']['Format'] = mapImageFormat
+        markers = []
+        markers.append({'Name': 'Start', 'Color': 'Green', 'Location': {
+            'Lat': wzStartLat, 'Lon': wzStartLon, 'Elev': None}})
+        markers.append({'Name': 'End', 'Color': 'Red', 'Location': {
+            'Lat': wzEndLat, 'Lon': wzEndLon, 'Elev': None}})
+        wzConfig['ImageInfo']['Markers'] = markers
 
-    wzConfig['ImageInfo']['ImageString'] = encoded_string
+        wzConfig['ImageInfo']['MapType'] = mapImageMapType
+        wzConfig['ImageInfo']['Height'] = mapImageHeight
+        wzConfig['ImageInfo']['Width'] = mapImageWidth
+        wzConfig['ImageInfo']['Format'] = mapImageFormat
 
-    cfg = open(local_updated_config_path, 'w')
-    cfg.write(json.dumps(wzConfig, indent='  '))
-    cfg.close()
+        wzConfig['ImageInfo']['ImageString'] = encoded_string
+
+        cfg = open(local_updated_config_path, 'w')
+        cfg.write(json.dumps(wzConfig, indent='  '))
+        cfg.close()
+    except KeyError as e:
+        logging.error("Invalid configuration file (Missing " +
+                      str(e) + "). Not updating image")
+    except Exception as e:
+        logging.error(
+            "Error during generation of configuration file image. Not updating image")
 
 
 def get_static_google_map(filename_wo_extension, center=None, zoom=None, imgsize="640x640", imgformat="png",
@@ -971,12 +1057,9 @@ def get_static_google_map(filename_wo_extension, center=None, zoom=None, imgsize
     # request += "sensor=false"   # must be given, deals with getting loction from mobile device
     # try:
     urllib.request.urlretrieve(request, filename_wo_extension)
-    # except Exception as e:
-    # logMsg('Error retrieving map image: ' + str(e))
+
 
 # Calculate google maps zoom level to fit a rectangle
-
-
 def calcZoomLevel(north, south, east, west, pixelWidth, pixelHeight):
     global zoom
     global centerLat
@@ -997,12 +1080,6 @@ def calcZoomLevel(north, south, east, west, pixelWidth, pixelHeight):
                      math.cos(centerLat*math.pi/180)) / math.log(2)) - 1
 
     zoom = max(min(zoomHoriz, zoomVert, ZOOM_MAX), 0)
-
-##############################################################################################
-#
-# ---------------------------- Automatically Export Files ------------------------------------
-#
-###############################################################################################
 
 
 def initVars():
@@ -1113,19 +1190,13 @@ def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateIm
     global files_list
 
     initVars()
-    # wzID = 'sample-work-zone--white-rock-cir'
-    # vehPathDataFile = './WZ_VehPathData/path-data--' + wzID + '.csv'
-    # local_config_path = './Config Files/config--' + wzID + '.json'
 
-    openLog()
-    logMsg('*** Running Message Builder and Export ***')
-    logMsg(str(datetime.datetime.now()))
-    inputFileDialog(local_config_path)
+    configRead(local_config_path)
 
     description = wzDesc.lower().strip().replace(' ', '-')
     road_name = roadName.lower().strip().replace(' ', '-')
     name_id = description + '--' + road_name
-    logMsg('WZID: ' + str(name_id))
+    logging.info('WZID: ' + str(name_id))
 
     if not mapImageString:
         updateImage = True
@@ -1133,26 +1204,21 @@ def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateIm
     if updateImage:
         updateConfigImage(vehPathDataFile)
         files_list.append(local_updated_config_path)
-        logMsg('Update image true')
     else:
         files_list.append(local_config_path)
-        logMsg('Update image false')
     startMainProcess(vehPathDataFile)
     files_list.append(vehPathDataFile)
     files_list.append(local_config_path)
 
-    description = wzDesc.lower().strip().replace(' ', '-')
-    road_name = roadName.lower().strip().replace(' ', '-')
-    name_id = description + '--' + road_name
-    # logMsg('Work zone name id: ' + name_id)
     zip_name = tempfile.gettempdir() + '/wzdc-exports--' + name_id + '.zip'
-    logMsg('Creating zip archive: ' + zip_name)
+    logging.info('Creating zip archive: ' + zip_name)
 
     zipObj = zipfile.ZipFile(zip_name, 'w')
     names = []
     for filename in files_list:
         if not os.path.exists(filename):
-            logMsg("File does not exist: " + filename)
+            logging.info(
+                "File does not exist. not adding to archive: " + filename)
             continue
         name = filename.split('/')[-1]
         name_orig = name
@@ -1175,7 +1241,7 @@ def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateIm
         else:
             logging.info(f'File not caught. path: {filename}, name: {name}')
             continue
-        logMsg('Adding file to archive: ' + filename + ', as: ' + name)
+        logging.info('Adding file to archive: ' + filename + ', as: ' + name)
         if name not in names:
             names.append(name)
             zipObj.write(filename, name)
@@ -1183,15 +1249,18 @@ def build_messages_and_export(wzID, vehPathDataFile, local_config_path, updateIm
     # close the Zip File
     zipObj.close()
 
-    # logMsg('Removing local configuration file: ' + local_config_path)
-    # os.remove(local_config_path)
-
-    # connect_str_env_var = 'neaeraiotstorage_storage'
-    # connect_str = os.getenv(connect_str_env_var)
-    # print('\nDownloading blob to \n\t' + download_file_path)
-    # logMsg('Loaded connection string from environment variable: ' + connect_str_env_var)
-    # blob_service_client = BlobServiceClient.from_connection_string(connect_str)
-    # container_client = blob_service_client.get_container_client('unzippedworkzonedatauploads')
     container_name = 'workzonedatauploads'
 
     uploadArchive(zip_name, container_name)
+
+
+def main():
+    wzID = 'demo-test-1-south--i-25'
+    vehPathDataFile = './sample_files/path-data--' + wzID + '.csv'
+    local_config_path = './sample_files/config--' + wzID + '.json'
+    build_messages_and_export(wzID, vehPathDataFile,
+                              local_config_path, False)
+
+
+if __name__ == "__main__":
+    main()
