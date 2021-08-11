@@ -10,7 +10,7 @@ import string
 import logging
 import copy
 
-from .validation_schema import wzdx_v3_1_feed
+from .validation_schema import wzdx_v3_0_feed
 
 
 # NOTE: Info object for reference
@@ -62,7 +62,7 @@ def wzdx_creator(messages, dataLane, info):
         # Verify data type
         wzd['road_event_feed_info']['update_frequency'] = info['metadata']['datafeed_frequency_update']
     wzd['road_event_feed_info']['version'] = '3.0'
-    wzd['road_event_feed_info']['license'] = info['license']
+    # wzd['road_event_feed_info']['license'] = info['license']
 
     data_source = {}
     data_source['data_source_id'] = str(uuid.uuid4())
@@ -119,7 +119,7 @@ def wzdx_creator(messages, dataLane, info):
     wzd['features'] = wzdxMessages
     wzd = add_ids(wzd, True)
     # This will throw an exception if the message is invalid
-    validate(schema=wzdx_v3_1_feed.WZDX_VALIDATION_SCHEMA, instance=wzd)
+    validate(schema=wzdx_v3_0_feed.WZDX_VALIDATION_SCHEMA, instance=wzd)
     return wzd
 
 
@@ -137,7 +137,7 @@ def add_ids(message, add_ids):
         for i in range(road_event_length):
             feature = message['features'][i]
             road_event_id = road_event_ids[i]
-            # feature['properties']['road_event_id'] = road_event_id
+            feature['properties']['road_event_id'] = road_event_id
             # feature['properties']['feed_info_id'] = feed_info_id
             feature['properties']['data_source_id'] = data_source_id
             # feature['properties']['relationship'] = {}
@@ -413,7 +413,7 @@ def setFeatureProperties(commonContainer, info):
     # feature['sub_identifier'] = ids['sub_identifier']
 
     # road_name
-    feature['road_names'] = [info['road_name']]
+    feature['road_name'] = info['road_name']
 
     # direction
     feature['direction'] = info['direction']
