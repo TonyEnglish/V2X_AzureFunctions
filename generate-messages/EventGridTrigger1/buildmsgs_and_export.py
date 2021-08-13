@@ -489,7 +489,7 @@ def getReferencePoint(node):
 
 
 def getIds(Ids, index):
-    if index > 4:
+    if index >= 4:
         return {'operatorId': OPERATOR_ID, 'uniqueId': str(uuid.uuid4())}
     else:
         return Ids[index]
