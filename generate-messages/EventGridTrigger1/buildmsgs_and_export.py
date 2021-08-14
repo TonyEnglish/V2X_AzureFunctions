@@ -114,9 +114,9 @@ def configRead(file):
             getConfigVars()
 
         except Exception as e:
-            logging.info('ERROR: Configuration file read failed: ' +
-                         file + '\n' + str(e))
-            raise e
+            logging.error('ERROR: Configuration file read failed: ' +
+                          file + '\n' + str(e))
+            raise RuntimeError(f"Invalid Condifuration File: {file}. {e}")
     else:
         logging.error('Configuration file NOT FOUND')
         raise RuntimeError('Configuration file does not exist')
@@ -435,9 +435,14 @@ def segmentToContainers(appMapPt, wzMapPt, numLanes, speedLimits):
                 reducedSpeedLimitActive = False
             else:
                 reducedSpeedLimitActive = True
+                geometry = copy.deepcopy(initialGeometry)
+                for i in range(numLanes):
+                    nodeGeometry = [node[i*5 + 0],
+                                    node[i*5 + 1], node[i*5 + 2]]
+                    geometry.append(nodeGeometry)
                 reducedSpeedZones.append({
                     'speedLimit': speedLimits[0],
-                    'geometry': copy.deepcopy(initialGeometry),
+                    'geometry': geometry,
                     'approachGeometry': getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, index),
                     'workersPresent': workersPresentActive})
 
@@ -459,9 +464,14 @@ def segmentToContainers(appMapPt, wzMapPt, numLanes, speedLimits):
                 lanesClosureActive = False
             else:
                 lanesClosureActive = True
+                geometry = copy.deepcopy(initialGeometry)
+                for i in range(numLanes):
+                    nodeGeometry = [node[i*5 + 0],
+                                    node[i*5 + 1], node[i*5 + 2]]
+                    geometry.append(nodeGeometry)
                 laneClosureZones.append({
                     'laneStat': laneStat,
-                    'geometry': copy.deepcopy(initialGeometry),
+                    'geometry': geometry,
                     'approachGeometry': getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, index),
                     'workersPresent': workersPresentActive})
 
@@ -489,6 +499,7 @@ def getReferencePoint(node):
 
 
 def getIds(Ids, index):
+    logging.info(Ids, index)
     if index > 4:
         return {'operatorId': OPERATOR_ID, 'uniqueId': str(uuid.uuid4())}
     else:
