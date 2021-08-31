@@ -594,63 +594,66 @@ def build_messages():
     idIndex = 0
 
     # reducedSpeedZones, workersPresentZones, laneClosureZones
-    for rsz in reducedSpeedZones:
-        eventId = getIds(eventIdList, idIndex)
+    if reducedSpeedZones:
+        for rsz in reducedSpeedZones:
+            eventId = getIds(eventIdList, idIndex)
 
-        rsm = {}
-        rsm['RoadsideSafetyMessage'] = {}
-        commonContainer = wz_xml_builder.buildCommonContainer(eventId, wzStart, wzEnd, timeOffset, wzDaysOfWeek, c_sc_codes, getReferencePoint(rsz['geometry'][0]),
-                                                              heading, laneWidth, roadWidth, laneStat[0][0], rsz['approachGeometry'], wzDesc, eventIdList)
-        rsm['RoadsideSafetyMessage']['commonContainer'] = commonContainer
+            rsm = {}
+            rsm['RoadsideSafetyMessage'] = {}
+            commonContainer = wz_xml_builder.buildCommonContainer(eventId, wzStart, wzEnd, timeOffset, wzDaysOfWeek, c_sc_codes, getReferencePoint(rsz['geometry'][0]),
+                                                                  heading, laneWidth, roadWidth, laneStat[0][0], rsz['approachGeometry'], wzDesc, eventIdList)
+            rsm['RoadsideSafetyMessage']['commonContainer'] = commonContainer
 
-        speedLimit = {
-            'type': 'vehicleMaxSpeed',
-            'value': rsz['speedLimit']
-        }
-        rszContainer = wz_xml_builder.buildRszContainer(
-            speedLimit, rsz['geometry'], laneWidth)
-        rsm['RoadsideSafetyMessage']['rszContainer'] = rszContainer
+            speedLimit = {
+                'type': 'vehicleMaxSpeed',
+                'value': rsz['speedLimit']
+            }
+            rszContainer = wz_xml_builder.buildRszContainer(
+                speedLimit, rsz['geometry'], laneWidth)
+            rsm['RoadsideSafetyMessage']['rszContainer'] = rszContainer
 
+            for laneClosure in laneClosureZones:
+                geometry = copy.deepcopy(initialGeometry)
+                for index, node in enumerate(laneClosure['geometry'][0]):
+                    if node in rsz['geometry'][0]:
+                        for lane, obj in enumerate(laneClosure['geometry']):
+                            geometry[lane].append(obj[index])
+                if geometry != initialGeometry:
+                    laneClosureContainer = wz_xml_builder.buildLaneClosureContainer(
+                        laneClosure['laneStat'], None, geometry, laneWidth)
+                    rsm['RoadsideSafetyMessage']['laneClosureContainer'] = laneClosureContainer
+
+            if rsz['workersPresent']:
+                situationalContainer = wz_xml_builder.buildSituationalContainer(
+                    None, None, True, None)
+                rsm['RoadsideSafetyMessage']['situationalContainer'] = situationalContainer
+
+            rsmSegments.append(rsm)
+            idIndex += 1
+    else:
         for laneClosure in laneClosureZones:
-            geometry = copy.deepcopy(initialGeometry)
-            for index, node in enumerate(laneClosure['geometry'][0]):
-                if node in rsz['geometry'][0]:
-                    for lane, obj in enumerate(laneClosure['geometry']):
-                        geometry[lane].append(obj[index])
-            if geometry != initialGeometry:
-                laneClosureContainer = wz_xml_builder.buildLaneClosureContainer(
-                    laneClosure['laneStat'], None, geometry, laneWidth)
-                rsm['RoadsideSafetyMessage']['laneClosureContainer'] = laneClosureContainer
+            eventId = getIds(eventIdList, idIndex)
 
-        if rsz['workersPresent']:
-            situationalContainer = wz_xml_builder.buildSituationalContainer(
-                None, None, True, None)
-            rsm['RoadsideSafetyMessage']['situationalContainer'] = situationalContainer
+            rsm = {}
+            rsm['RoadsideSafetyMessage'] = {}
+            commonContainer = wz_xml_builder.buildCommonContainer(eventId, wzStart, wzEnd, timeOffset, wzDaysOfWeek, c_sc_codes, getReferencePoint(laneClosure['geometry'][0]),
+                                                                  heading, laneWidth, roadWidth, laneStat[0][0], laneClosure['approachGeometry'], wzDesc, eventIdList)
+            rsm['RoadsideSafetyMessage']['commonContainer'] = commonContainer
 
-        rsmSegments.append(rsm)
-        idIndex += 1
+            laneClosureContainer = wz_xml_builder.buildLaneClosureContainer(
+                laneClosure['laneStat'], None, laneClosure['geometry'], laneWidth)
+            rsm['RoadsideSafetyMessage']['laneClosureContainer'] = laneClosureContainer
 
-    # for laneClosure in laneClosureZones:
-    #     eventId = getIds(eventIdList, idIndex)
+            if laneClosure['workersPresent']:
+                situationalContainer = wz_xml_builder.buildSituationalContainer(
+                    None, None, True, None)
+                rsm['RoadsideSafetyMessage']['situationalContainer'] = situationalContainer
 
-    #     rsm = {}
-    #     rsm['RoadsideSafetyMessage'] = {}
-    #     commonContainer = wz_xml_builder.buildCommonContainer(eventId, wzStart, wzEnd, timeOffset, wzDaysOfWeek, c_sc_codes, getReferencePoint(laneClosure['geometry'][0]),
-    #         heading, laneWidth, roadWidth, laneStat[0][0], laneClosure['approachGeometry'], wzDesc, eventIdList)
-    #     rsm['RoadsideSafetyMessage']['commonContainer'] = commonContainer
+            if len(eventIdList) < 4:
+                eventIdList.append(eventId)
 
-    #     laneClosureContainer = wz_xml_builder.buildLaneClosureContainer(laneClosure['laneStat'], None, laneClosure['geometry'], laneWidth)
-    #     rsm['RoadsideSafetyMessage']['laneClosureContainer'] = laneClosureContainer
-
-    #     if laneClosure['workersPresent']:
-    #         situationalContainer = wz_xml_builder.buildSituationalContainer(None, None, True, None)
-    #         rsm['RoadsideSafetyMessage']['situationalContainer'] = situationalContainer
-
-    #     if len(eventIdList) < 4:
-    #         eventIdList.append(eventId)
-
-    #     rsmSegments.append(rsm)
-    #     idIndex += 1
+            rsmSegments.append(rsm)
+            idIndex += 1
 
     if not noRSM:
         numSegments = len(rsmSegments)

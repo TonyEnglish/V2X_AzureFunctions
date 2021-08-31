@@ -38,34 +38,38 @@ def main(event: func.EventGridEvent):
     config_path = tempfile.gettempdir() + '/config.json'
     # parameter_path = tempfile.gettempdir() + '/parameters.json'
 
-    blob_service_client = BlobServiceClient.from_connection_string(
-        os.environ['neaeraiotstorage_storage'], logger=logger)
-    container_name = 'workzoneuploads'
-    blob_name = event.subject.split('/')[-1]
-    logging.info('CSV: container: ' + container_name + ', blob: ' + blob_name)
-    blob_client = blob_service_client.get_blob_client(
-        container=container_name, blob=blob_name)
-    logging.info('39')
-    with open(csv_path, 'wb') as download_file:
-        download_file.write(blob_client.download_blob().readall())
-    logging.info('42')
+    try:
 
-    blob_name = 'config' + wzID + '.json'
-    container_name = 'publishedconfigfiles'
-    logging.info('Config: container: ' +
-                 container_name + ', blob: ' + blob_name)
-    blob_client = blob_service_client.get_blob_client(
-        container=container_name, blob=blob_name)
-    with open(config_path, 'wb') as download_file:
-        download_file.write(blob_client.download_blob().readall())
+        blob_service_client = BlobServiceClient.from_connection_string(
+            os.environ['neaeraiotstorage_storage'], logger=logger)
+        container_name = 'workzoneuploads'
+        blob_name = event.subject.split('/')[-1]
+        logging.info('CSV: container: ' + container_name +
+                     ', blob: ' + blob_name)
+        blob_client = blob_service_client.get_blob_client(
+            container=container_name, blob=blob_name)
+        with open(csv_path, 'wb') as download_file:
+            download_file.write(blob_client.download_blob().readall())
 
-    logging.info('Wrote local files')
+        blob_name = 'config' + wzID + '.json'
+        container_name = 'publishedconfigfiles'
+        logging.info('Config: container: ' +
+                     container_name + ', blob: ' + blob_name)
+        blob_client = blob_service_client.get_blob_client(
+            container=container_name, blob=blob_name)
+        with open(config_path, 'wb') as download_file:
+            download_file.write(blob_client.download_blob().readall())
 
-    # with open(parameter_path, 'w') as f:
-    #     parameters = {}
-    #     parameters['id'] = wzID
-    #     f.write(json.dumps(parameters))
+        logging.info('Wrote local files')
 
-    buildmsgs_and_export.build_messages_and_export(
-        wzID, csv_path, config_path, updateImage)
-    # sys.exit(0)
+        # with open(parameter_path, 'w') as f:
+        #     parameters = {}
+        #     parameters['id'] = wzID
+        #     f.write(json.dumps(parameters))
+
+        buildmsgs_and_export.build_messages_and_export(
+            wzID, csv_path, config_path, updateImage)
+        # sys.exit(0)
+    except Exception as e:
+        raise RuntimeError(json.dumps(
+            {"data_file": fileName, "wz_id": wzID, "error_message": str(e)}))
