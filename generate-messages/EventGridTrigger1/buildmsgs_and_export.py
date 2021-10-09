@@ -313,13 +313,10 @@ def getConfigVars():
 
 
 def getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, currIndex):
-    print(currIndex)
     laneIndex = numLanes - 1
     approachDistance = APPROADH_REGION_TIME * (speedLimits[0] * MPS_PER_MPH)
     currDistance = wzMapPt[currIndex][(numLanes - 1)*5 + 7]
     startDistance = currDistance - approachDistance
-    logging.info(str(startDistance) + ', ' +
-                 str(currDistance) + ', ' + str(approachDistance))
     if startDistance < 0 and currIndex < 63:
         # Need to use approach region points
         appTotalDistance = appMapPt[-1][(numLanes - 1)*5 + 7]
@@ -338,7 +335,6 @@ def getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, currInde
     else:
         startIndex = max(findNodeByDistance(wzMapPt, numLanes,
                          startDistance), currIndex - MAX_NUM_NODES)
-        print(startIndex)
         geometry = getMapPointsBetweenIndexes(
             wzMapPt, numLanes, startIndex, currIndex, [])
 
@@ -412,8 +408,8 @@ def segmentToContainers(appMapPt, wzMapPt, numLanes, speedLimits):
         speedLimit = node[(numLanes-1)*5 + 8]
 
         if wpStat != prevWpStat:
-            logging.debug("wpStat change: " +
-                          str(wpStat) + ", at " + str(index))
+            logging.info("wpStat change: " +
+                         str(wpStat) + ", at " + str(index))
             prevWpStat = wpStat
             if wpStat == False:
                 workersPresentActive = False
@@ -421,8 +417,8 @@ def segmentToContainers(appMapPt, wzMapPt, numLanes, speedLimits):
                 workersPresentActive = True
 
         if speedLimit != prevSpeedLimit or (reducedSpeedZones and len(reducedSpeedZones[-1]['geometry']) >= MAX_NUM_NODES - 1):
-            logging.debug("speed limit change or reset: " +
-                          str(speedLimit) + ", at node number " + str(index))
+            logging.info("speed limit change or reset: " +
+                         str(speedLimit) + ", at node number " + str(index))
 
             if reducedSpeedZones:
                 for i in range(numLanes):
@@ -441,17 +437,12 @@ def segmentToContainers(appMapPt, wzMapPt, numLanes, speedLimits):
                                     node[i*5 + 1], node[i*5 + 2]]
                     geometry.append(nodeGeometry)
                 reducedSpeedZones.append({
-                    'speedLimit': speedLimits[0],
+                    'speedLimit': speedLimit,
                     'geometry': geometry,
                     'approachGeometry': getApproachRegionGeometry(appMapPt, wzMapPt, numLanes, speedLimits, index),
                     'workersPresent': workersPresentActive})
 
-        logging.info("laneStat: " +
-                     str(laneStat) + ", at node number " + str(index))
-
         if laneStat != prevLaneStat or (laneClosureZones and len(laneClosureZones[-1]['geometry']) >= MAX_NUM_NODES - 1):
-            logging.info("laneStat change or reset: " +
-                         str(laneStat) + ", at node number " + str(index))
 
             if laneClosureZones:
                 for i in range(numLanes):
@@ -499,8 +490,7 @@ def getReferencePoint(node):
 
 
 def getIds(Ids, index):
-    logging.info(Ids, index)
-    if index > 4:
+    if index >= 4:
         return {'operatorId': OPERATOR_ID, 'uniqueId': str(uuid.uuid4())}
     else:
         return Ids[index]
@@ -540,7 +530,6 @@ def build_messages():
     rsmSegments = []
 
     wzdx_outFile = tempfile.gettempdir() + '/WZDx_File-' + ctrDT + '.geojson'
-    logging.debug('WZDx output file path: ' + wzdx_outFile)
     wzdxFile = open(wzdx_outFile, 'w')
     files_list.append(wzdx_outFile)
 
@@ -548,6 +537,10 @@ def build_messages():
 
     reducedSpeedZones, workersPresentZones, laneClosureZones = segmentToContainers(
         appMapPt, wzMapPt, laneStat[0][0], speedLimit[1:])
+
+    logging.info(reducedSpeedZones)
+    logging.info(workersPresentZones)
+    logging.info(laneClosureZones)
 
 ###
 # Create and open output xml file...
@@ -581,17 +574,23 @@ def build_messages():
     numRsms = 0
 
     initialGeometry = []
-    for i in range(len(reducedSpeedZones[0]['geometry'])):
-        initialGeometry.append([])
 
-    for rsz in reducedSpeedZones:
-        numRsms += 1
+    if reducedSpeedZones:
+        for i in range(len(reducedSpeedZones[0]['geometry'])):
+            initialGeometry.append([])
+        for rsz in reducedSpeedZones:
+            numRsms += 1
+    else:
+        for lc in laneClosureZones:
+            numRsms += 1
 
     for i in range(min(numRsms, 4)):
         eventIdList.append(
             {'operatorId': OPERATOR_ID, 'uniqueId': str(uuid.uuid4())})
 
     idIndex = 0
+
+    logging.info("593")
 
     # reducedSpeedZones, workersPresentZones, laneClosureZones
     if reducedSpeedZones:
@@ -655,16 +654,16 @@ def build_messages():
             rsmSegments.append(rsm)
             idIndex += 1
 
+    logging.info("657")
+
     if not noRSM:
         numSegments = len(rsmSegments)
         for index, rsm in enumerate(rsmSegments):
             xml_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + \
                 str(index + 1)+'_of_'+str(numSegments)+'.xml'
-            logging.debug('RSM XML output file path: ' + xml_outFile)
 
             uper_outFile = tempfile.gettempdir() + '/RSZW_MAP_xml_File-' + ctrDT + '-' + \
                 str(index + 1)+'_of_'+str(numSegments)+'.uper'
-            logging.debug('RSM UPER output file path: ' + uper_outFile)
 
             files_list.append(xml_outFile)
             # files_list.append(uper_outFile)
@@ -678,7 +677,7 @@ def build_messages():
 
         # linux = subprocess.check_output(
         #     ['uname', '-a'], stderr=subprocess.STDOUT).decode('utf-8')
-        # logging.debug("Linux Installation Information: " + str(linux))
+        # logging.info("Linux Installation Information: " + str(linux))
         # try:
         #     p = subprocess.Popen(['./EventGridTrigger1/jvm/bin/java', '-jar', './EventGridTrigger1/CVMsgBuilder_xmltouper_v8.jar', str(
         #         xml_outFile), str(uper_outFile)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -768,7 +767,7 @@ def startMainProcess(vehPathDataFile):
 
     timeRegex = '[0-9]{2}(:[0-9]{2}){3}'
     lastIndex = len(csvList) - 1
-    logging.debug('Length of CSV data: ' + str(lastIndex))
+    logging.info('Length of CSV data: ' + str(lastIndex))
     time1 = re.search(timeRegex, str(csvList[1])).group(0).split(':')
     time2 = re.search(timeRegex, str(csvList[lastIndex])).group(0).split(':')
 
@@ -781,7 +780,7 @@ def startMainProcess(vehPathDataFile):
     if sampleFreq < 1 or sampleFreq > 10:
         sampleFreq = 10
 
-    logging.debug('Sample Frequency: ' + str(sampleFreq))
+    logging.info('Sample Frequency: ' + str(sampleFreq))
 
     totRows = len(csvList) - 1  # total records or lines in file
 
@@ -795,13 +794,11 @@ def startMainProcess(vehPathDataFile):
 #   Updated on Aug. 23, 2018
 #
 ###
-    logging.debug('Length of Path Point Before: ' + str(len(pathPt)))
 
     # temporary list to hold return values from function below
     atRefPoint = [0, 0, 0, 0]
     wz_vehpath_lanestat_builder.buildVehPathData_LaneStat(
         vehPathDataFile, totalLanes, pathPt, laneStat, wpStat, refPoint, atRefPoint, sampleFreq)
-    logging.debug('Length of Path Points After: ' + str(len(pathPt)))
     refPtIdx = atRefPoint[0]
     wzLen = atRefPoint[1]
     appHeading = atRefPoint[2]
@@ -855,14 +852,14 @@ def startMainProcess(vehPathDataFile):
 
     wzMapLen = [0, 0]  # both approach and wz mapped length
     laneType = 1  # approach lanes
-    logging.debug(str(laneType) + ', ' + str(len(pathPt)) + ', ' + str(len(appMapPt)) + ', ' +
-                  str(laneWidth) + ', ' + str(lanePadApp) + ', ' + str(refPtIdx) + ', ' + str(appMapPtDist))
-    logging.debug(str(laneStat) + ',' + str(wpStat) + ', ' + str(dataLane) +
-                  ', ' + str(wzMapLen) + ', ' + str(speedList) + ', ' + str(sampleFreq))
+    logging.info(str(laneType) + ', ' + str(len(pathPt)) + ', ' + str(len(appMapPt)) + ', ' +
+                 str(laneWidth) + ', ' + str(lanePadApp) + ', ' + str(refPtIdx) + ', ' + str(appMapPtDist))
+    logging.info(str(laneStat) + ',' + str(wpStat) + ', ' + str(dataLane) +
+                 ', ' + str(wzMapLen) + ', ' + str(speedList) + ', ' + str(sampleFreq))
     wz_map_constructor.getLanePt(laneType, pathPt, appMapPt, laneWidth, lanePadApp,
                                  refPtIdx, appMapPtDist, laneStat, wpStat, dataLane, wzMapLen, speedList, sampleFreq)
-    logging.debug('Length of Approach Points: ' + str(len(appMapPt)))
-    logging.debug('Length of Path Point: ' + str(len(pathPt)))
+    logging.info('Length of Approach Points: ' + str(len(appMapPt)))
+    logging.info('Length of Path Point: ' + str(len(pathPt)))
 
 
 ###
@@ -874,17 +871,13 @@ def startMainProcess(vehPathDataFile):
 
     laneType = 2  # wz lanes
 
-    logging.debug('Length of Work Zone Points Before: ' + str(len(wzMapPt)))
-
-    print(laneStat)
-    print(pathPt)
-    print(dataLane)
+    logging.info('Length of Work Zone Points Before: ' + str(len(wzMapPt)))
 
     # Append all nodes to wzMapPt
     wz_map_constructor.getLanePt(laneType, pathPt, wzMapPt, laneWidth, lanePadWZ, refPtIdx,
                                  wzMapPtDist, laneStat, wpStat, dataLane, wzMapLen, speedList, sampleFreq)
-    logging.debug('Length of Work Zone Points After: ' + str(len(wzMapPt)))
-    logging.debug('Length of Path Point: ' + str(len(pathPt)))
+    logging.info('Length of Work Zone Points After: ' + str(len(wzMapPt)))
+    logging.info('Length of Path Point: ' + str(len(pathPt)))
 
 
 ###
@@ -927,11 +920,11 @@ def openLog():
 
 
 def uploadArchive(zip_name, container_name):
-    logging.debug('Creating blob in azure: ' + zip_name +
-                  ', in container: ' + container_name)
+    logging.info('Creating blob in azure: ' + zip_name +
+                 ', in container: ' + container_name)
     blob_client = blob_service_client.get_blob_client(
         container=container_name, blob=zip_name.split('/')[-1])
-    logging.debug('Uploading zip archive to blob')
+    logging.info('Uploading zip archive to blob')
     with open(zip_name, 'rb') as data:
         blob_client.upload_blob(data, overwrite=True)
 
