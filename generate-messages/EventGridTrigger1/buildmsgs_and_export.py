@@ -435,7 +435,7 @@ def segmentToContainers(appMapPt, wzMapPt, numLanes, speedLimits):
                 for i in range(numLanes):
                     nodeGeometry = [node[i*5 + 0],
                                     node[i*5 + 1], node[i*5 + 2]]
-                    geometry.append(nodeGeometry)
+                    geometry[i].append(nodeGeometry)
                 reducedSpeedZones.append({
                     'speedLimit': speedLimit,
                     'geometry': geometry,
@@ -459,7 +459,7 @@ def segmentToContainers(appMapPt, wzMapPt, numLanes, speedLimits):
                 for i in range(numLanes):
                     nodeGeometry = [node[i*5 + 0],
                                     node[i*5 + 1], node[i*5 + 2]]
-                    geometry.append(nodeGeometry)
+                    geometry[i].append(nodeGeometry)
                 laneClosureZones.append({
                     'laneStat': laneStat,
                     'geometry': geometry,
@@ -590,8 +590,6 @@ def build_messages():
 
     idIndex = 0
 
-    logging.info("593")
-
     # reducedSpeedZones, workersPresentZones, laneClosureZones
     if reducedSpeedZones:
         for rsz in reducedSpeedZones:
@@ -653,8 +651,6 @@ def build_messages():
 
             rsmSegments.append(rsm)
             idIndex += 1
-
-    logging.info("657")
 
     if not noRSM:
         numSegments = len(rsmSegments)
